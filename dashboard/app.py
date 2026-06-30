@@ -73,7 +73,8 @@ def create_app() -> Flask:
     # Route: /weather
     @app.route("/weather", methods=["GET"])
     def weather():
-        city_key = (request.args.get("city") or "LONDON").upper().strip()
+        city_raw = request.args.get("city") or ""
+        city_key = city_raw.upper().strip()
         horizon_raw = request.args.get("horizon")
 
         has_results = False
@@ -82,7 +83,7 @@ def create_app() -> Flask:
             "active_tab": "weather",
             "has_results": has_results,
             "error_msg": error_msg,
-            "city": city_key,
+            "city": city_key or "LONDON",
             "horizon": horizon_raw or "30",
         }
 
@@ -94,7 +95,7 @@ def create_app() -> Flask:
             {"id": "SYDNEY", "name": "Sydney, Australia"}
         ]
 
-        if city_key:
+        if city_raw:
             try:
                 horizon = _parse_horizon(horizon_raw)
                 forecast_data = _build_weather_forecast(city_key, horizon)
@@ -108,7 +109,8 @@ def create_app() -> Flask:
     # Route: /economics
     @app.route("/economics", methods=["GET"])
     def economics():
-        series_id = (request.args.get("series_id") or "UNRATE").upper().strip()
+        series_raw = request.args.get("series_id") or ""
+        series_id = series_raw.upper().strip()
         horizon_raw = request.args.get("horizon")
 
         has_results = False
@@ -117,7 +119,7 @@ def create_app() -> Flask:
             "active_tab": "economics",
             "has_results": has_results,
             "error_msg": error_msg,
-            "series_id": series_id,
+            "series_id": series_id or "UNRATE",
             "horizon": horizon_raw or "30",
         }
 
@@ -128,7 +130,7 @@ def create_app() -> Flask:
             {"id": "FEDFUNDS", "name": "Effective Federal Funds Interest Rate (%)"}
         ]
 
-        if series_id:
+        if series_raw:
             try:
                 horizon = _parse_horizon(horizon_raw)
                 forecast_data = _build_economics_forecast(series_id, horizon)
