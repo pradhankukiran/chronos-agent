@@ -84,13 +84,13 @@
     </div>
     {% elif active_tab == 'economics' %}
     <div class="govuk-form-group">
-      <label class="govuk-label govuk-label--l" for="series_id">Economic indicator</label>
-      <div id="series-hint" class="govuk-hint">Select a macroeconomic time series from FRED.</div>
-      <select class="govuk-select" id="series_id" name="series_id" style="font-size:19px; max-width: 25rem; border:2px solid #0b0c0c; height:45px; padding: 5px;">
-        {% for ind in indicators %}
-          <option value="{{ ind.id }}" {% if series_id == ind.id %}selected{% endif %}>{{ ind.name }}</option>
-        {% endfor %}
-      </select>
+      <label class="govuk-label govuk-label--l" for="economics-autocomplete">Search for an economic indicator</label>
+      <div id="economics-hint" class="govuk-hint">
+        Enter any economic indicator (e.g. GDP, Unemployment, Inflation, S&P 500, or Bond Yield).
+      </div>
+      <div id="economics-autocomplete-container" style="max-width: 25rem;"></div>
+      <input type="hidden" id="series_id" name="series_id" value="{{ series_id or '' }}">
+      <input type="hidden" id="series_name" name="series_name" value="{{ series_name or '' }}">
     </div>
     {% endif %}
 
@@ -457,6 +457,65 @@
             latInput.value = match[1].trim();
             lonInput.value = match[2].trim();
             nameInput.value = val.substring(0, val.indexOf(' (')).trim();
+          }
+        }
+      });
+    });
+  </script>
+  {% endif %}
+
+  {% if active_tab == 'economics' %}
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      var container = document.querySelector('#economics-autocomplete-container');
+      var idInput = document.getElementById('series_id');
+      var nameInput = document.getElementById('series_name');
+      
+      var optionsMap = {};
+
+      accessibleAutocomplete({
+        element: container,
+        id: 'economics-autocomplete',
+        source: function(query, populateResults) {
+          fetch('/api/economics/search?q=' + encodeURIComponent(query))
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              optionsMap = {};
+              var formatted = data.map(function(item) {
+                optionsMap[item.label] = item;
+                return item.label;
+              });
+              populateResults(formatted);
+            });
+        },
+        minLength: 1,
+        placeholder: 'Search for an economic indicator...',
+        onConfirm: function(val) {
+          if (val && optionsMap[val]) {
+            var selected = optionsMap[val];
+            idInput.value = selected.id;
+            nameInput.value = selected.name;
+          }
+        },
+        defaultValue: '{% if series_id %}{{ series_id }}{% if series_name %} - {{ series_name }}{% endif %}{% endif %}'
+      });
+
+      // Submit listener to extract series ID right before submission
+      var form = document.getElementById('forecast-form');
+      form.addEventListener('submit', function (e) {
+        var visibleInput = document.getElementById('economics-autocomplete');
+        if (visibleInput && visibleInput.value.trim() !== '') {
+          var val = visibleInput.value.trim();
+          var parts = val.split(' - ');
+          if (parts.length > 0) {
+            idInput.value = parts[0].trim();
+          }
+          if (parts.length > 1) {
+            var nameVal = parts[1].trim();
+            if (nameVal.indexOf(' (') !== -1) {
+              nameVal = nameVal.substring(0, nameVal.indexOf(' (')).trim();
+            }
+            nameInput.value = nameVal;
           }
         }
       });

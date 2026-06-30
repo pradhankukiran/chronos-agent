@@ -26,6 +26,42 @@ import plotly.graph_objects as go            # noqa: E402
 import requests                               # noqa: E402
 
 
+POPULAR_FRED_SERIES = [
+    {"id": "GDP", "name": "Gross Domestic Product (GDP)", "freq": "Quarterly"},
+    {"id": "GDPC1", "name": "Real Gross Domestic Product (Real GDP)", "freq": "Quarterly"},
+    {"id": "UNRATE", "name": "U.S. Unemployment Rate (%)", "freq": "Monthly"},
+    {"id": "CPIAUCSL", "name": "U.S. Consumer Price Index / Inflation", "freq": "Monthly"},
+    {"id": "FEDFUNDS", "name": "Effective Federal Funds Interest Rate (%)", "freq": "Monthly"},
+    {"id": "PAYEMS", "name": "Total Nonfarm Payroll Employees", "freq": "Monthly"},
+    {"id": "T10Y2Y", "name": "Treasury Yield Spread (10-Year minus 2-Year)", "freq": "Daily"},
+    {"id": "DGS10", "name": "10-Year Treasury Bond Yield (%)", "freq": "Daily"},
+    {"id": "DGS2", "name": "2-Year Treasury Bond Yield (%)", "freq": "Daily"},
+    {"id": "DGS30", "name": "30-Year Treasury Bond Yield (%)", "freq": "Daily"},
+    {"id": "M2SL", "name": "M2 Money Supply (Billions)", "freq": "Monthly"},
+    {"id": "INDPRO", "name": "Industrial Production Index", "freq": "Monthly"},
+    {"id": "HOUST", "name": "U.S. Housing Starts (New Construction)", "freq": "Monthly"},
+    {"id": "UMCSENT", "name": "University of Michigan Consumer Sentiment Index", "freq": "Monthly"},
+    {"id": "RSXFS", "name": "U.S. Advance Retail Sales", "freq": "Monthly"},
+    {"id": "WALCL", "name": "Federal Reserve System Total Assets", "freq": "Weekly"},
+    {"id": "DGORDER", "name": "Manufacturers' New Orders: Durable Goods", "freq": "Monthly"},
+    {"id": "PPIACO", "name": "Producer Price Index (All Commodities)", "freq": "Monthly"},
+    {"id": "ICSA", "name": "Weekly Initial Jobless Claims", "freq": "Weekly"},
+    {"id": "SP500", "name": "S&P 500 Stock Market Index Price", "freq": "Daily"},
+    {"id": "NASDAQ100", "name": "NASDAQ 100 Stock Index Price", "freq": "Daily"},
+    {"id": "BAMLH0A0HYM2", "name": "US High Yield Corporate Bond Option-Adjusted Spread (%)", "freq": "Daily"},
+    {"id": "DTWEXBGS", "name": "Trade-Weighted U.S. Dollar Index", "freq": "Weekly"},
+    {"id": "CP", "name": "Corporate Profits After Tax", "freq": "Quarterly"},
+    {"id": "BUSINV", "name": "Total Business Inventories", "freq": "Monthly"},
+    {"id": "PCE", "name": "Personal Consumption Expenditures", "freq": "Monthly"},
+    {"id": "PSAVERT", "name": "Personal Saving Rate (%)", "freq": "Monthly"},
+    {"id": "FYFSD", "name": "U.S. Federal Surplus or Deficit", "freq": "Yearly"},
+    {"id": "GFDEGDQ188S", "name": "Total Federal Public Debt as % of GDP", "freq": "Quarterly"},
+    {"id": "CSUSHPINSA", "name": "S&P/Case-Shiller U.S. National Home Price Index", "freq": "Monthly"},
+    {"id": "DCOILWTICO", "name": "WTI Crude Oil Price (USD/Barrel)", "freq": "Daily"},
+    {"id": "GASREGCOW", "name": "U.S. Regular Gasoline Retail Price (USD/Gallon)", "freq": "Weekly"},
+    {"id": "MORTGAGE30US", "name": "30-Year Fixed Rate Mortgage Average (%)", "freq": "Weekly"}
+]
+
 def create_app() -> Flask:
     app = Flask(__name__)
 
@@ -108,6 +144,7 @@ def create_app() -> Flask:
     def economics():
         series_raw = request.args.get("series_id") or ""
         series_id = series_raw.upper().strip()
+        series_name = request.args.get("series_name") or ""
         horizon_raw = request.args.get("horizon")
 
         has_results = False
@@ -116,16 +153,10 @@ def create_app() -> Flask:
             "active_tab": "economics",
             "has_results": has_results,
             "error_msg": error_msg,
-            "series_id": series_id or "UNRATE",
+            "series_id": series_id,
+            "series_name": series_name,
             "horizon": horizon_raw or "30",
         }
-
-        # List of preset indicators
-        context["indicators"] = [
-            {"id": "UNRATE", "name": "U.S. Unemployment Rate (%)"},
-            {"id": "CPIAUCSL", "name": "U.S. Consumer Price Index (CPI)"},
-            {"id": "FEDFUNDS", "name": "Effective Federal Funds Interest Rate (%)"}
-        ]
 
         if series_raw:
             try:
@@ -198,9 +229,26 @@ def create_app() -> Flask:
                     "lat": lat,
                     "lon": lon
                 })
-            return jsonify(out)
+            return jsonify(results[:10])
         except Exception:
             return jsonify([])
+
+    # Auto-complete API route for Economics tab
+    @app.route("/api/economics/search", methods=["GET"])
+    def api_economics_search():
+        query = request.args.get("q", "").strip().lower()
+        if len(query) < 1:
+            return jsonify([])
+
+        results = []
+        for s in POPULAR_FRED_SERIES:
+            if query in s["id"].lower() or query in s["name"].lower():
+                results.append({
+                    "id": s["id"],
+                    "label": f"{s['id']} - {s['name']} ({s['freq']})",
+                    "name": s["name"]
+                })
+        return jsonify(results[:10])
 
     return app
 
@@ -330,15 +378,17 @@ def _build_weather_forecast(lat: float, lon: float, city_name: str, horizon: int
 
 
 def _build_economics_forecast(series_id: str, horizon: int) -> dict:
-    series_map = {
-        "UNRATE": {"name": "U.S. Unemployment Rate", "suffix": "%"},
-        "CPIAUCSL": {"name": "U.S. Consumer Price Index (CPI)", "suffix": ""},
-        "FEDFUNDS": {"name": "Effective Federal Funds Interest Rate", "suffix": "%"}
-    }
-    
-    series_info = series_map.get(series_id, series_map["UNRATE"])
-    series_name = series_info["name"]
-    unit_suffix = series_info["suffix"]
+    # Find series metadata in POPULAR_FRED_SERIES
+    series_info = next((s for s in POPULAR_FRED_SERIES if s["id"] == series_id), None)
+    if series_info:
+        series_name = series_info["name"]
+        unit_freq = series_info["freq"]
+    else:
+        series_name = f"Economic Indicator {series_id}"
+        unit_freq = "Monthly"
+        
+    unit_suffix = "%" if "%" in series_name else ""
+    unit_prefix = "$" if "Price" in series_name or "Sales" in series_name or "Profits" in series_name or "Spend" in series_name else ""
 
     # Fetch FRED indicator
     hist = fetch_economic_data(series_id)
@@ -360,7 +410,7 @@ def _build_economics_forecast(series_id: str, horizon: int) -> dict:
     pct_change = (price_change / current_price) * 100.0 if current_price else 0.0
 
     # Render with custom economic labels
-    chart_html = _render_chart(hist.tail(24), forecast_df, horizon, y_title=f"Rate/Value ({unit_suffix or 'index'})", tick_prefix="", tick_suffix=unit_suffix)
+    chart_html = _render_chart(hist.tail(40), forecast_df, horizon, y_title=f"Value ({unit_suffix or 'units'})", tick_prefix=unit_prefix, tick_suffix=unit_suffix)
 
     rows = [
         {
@@ -375,9 +425,9 @@ def _build_economics_forecast(series_id: str, horizon: int) -> dict:
     company_info = {
         "name": f"Economic Indicator Profile: {series_name}",
         "sector": "Macroeconomic Policy",
-        "industry": "National Statistics",
+        "industry": f"Frequency: {unit_freq}",
         "employees": "N/A",
-        "summary": f"Historical and forecasted monthly rates for the {series_name} series sourced directly from the Federal Reserve Bank (FRED) data repository.",
+        "summary": f"Historical and forecasted time-series rates for the {series_name} series sourced directly from the Federal Reserve Bank (FRED) data repository.",
         "market_cap": "N/A",
         "pe_ratio": "N/A",
         "beta": "N/A",
@@ -395,7 +445,7 @@ def _build_economics_forecast(series_id: str, horizon: int) -> dict:
         "ticker": series_id,
         "company_info": company_info,
         "diagnostics": diagnostics,
-        "unit_prefix": "",
+        "unit_prefix": unit_prefix,
         "unit_suffix": unit_suffix
     }
 
