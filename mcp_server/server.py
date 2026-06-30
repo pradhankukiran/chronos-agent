@@ -59,18 +59,52 @@ def forecast_asset_price(ticker: str, days_to_predict: int = 30) -> str:
         return f"Error executing forecast for ticker '{ticker}': {str(e)}"
 
 @mcp.tool()
-def forecast_weather(latitude: float, longitude: float, days_to_predict: int = 30) -> str:
+def forecast_weather(location: str, days_to_predict: int = 30) -> str:
     """
-    Downloads historical maximum daily temperatures from Open-Meteo,
-    applies the hybrid Prophet + XGBoost forecasting model, and returns predicted 
-    temperatures for the specified number of days.
+    Downloads historical maximum daily temperatures from Open-Meteo for a given
+    city name or coordinates, applies the hybrid Prophet + XGBoost forecasting model,
+    and returns predicted future temperatures.
 
     Args:
-        latitude: Latitude coordinate of the location.
-        longitude: Longitude coordinate of the location.
+        location: City name (e.g. 'London', 'San Francisco') or coordinates (e.g. '37.7749, -122.4194').
         days_to_predict: Number of days into the future to forecast (default is 30, max 90).
     """
+    import re
+    import requests
     days_to_predict = min(max(int(days_to_predict), 5), 90)
+    
+    # 1. Check if input is coordinate format (lat, lon)
+    coord_match = re.match(r"^\s*([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)\s*$", location)
+    if coord_match:
+        latitude = float(coord_match.group(1))
+        longitude = float(coord_match.group(2))
+        resolved_name = f"Coordinates ({latitude:.4f}, {longitude:.4f})"
+    else:
+        # 2. Resolve city name using Geocoding API
+        geocode_url = f"https://geocoding-api.open-meteo.com/v1/search?name={requests.utils.quote(location)}&count=1&language=en&format=json"
+        try:
+            r = requests.get(geocode_url, timeout=5)
+            r.raise_for_status()
+            results = r.json().get("results", [])
+            if not results:
+                return f"Error: Could not resolve location name '{location}' to coordinates. Please try a more specific city/region name."
+            first = results[0]
+            latitude = first["latitude"]
+            longitude = first["longitude"]
+            
+            # Format location label
+            name = first.get("name")
+            admin1 = first.get("admin1")
+            country = first.get("country")
+            resolved_name = f"{name}"
+            if admin1:
+                resolved_name += f", {admin1}"
+            if country:
+                resolved_name += f", {country}"
+            resolved_name += f" ({latitude:.4f}, {longitude:.4f})"
+        except Exception as e:
+            return f"Error resolving geocoding for '{location}': {str(e)}"
+
     cache_key = f"WEATHER_{latitude:.4f}_{longitude:.4f}"
     try:
         forecast_df = get_generic_forecast(
@@ -80,8 +114,7 @@ def forecast_weather(latitude: float, longitude: float, days_to_predict: int = 3
         )
         
         lines = [
-            f"### ChronosAgent Weather Forecast Report",
-            f"Coordinates: ({latitude:.4f}, {longitude:.4f})",
+            f"### ChronosAgent Weather Forecast Report: {resolved_name}",
             f"Forecast Horizon: {days_to_predict} days",
             "",
             "| Date | Hybrid Predicted Temp (°C) | Prophet Component | XGBoost Component |",
@@ -94,7 +127,7 @@ def forecast_weather(latitude: float, longitude: float, days_to_predict: int = 3
             )
         return "\n".join(lines)
     except Exception as e:
-        return f"Error executing weather forecast for ({latitude}, {longitude}): {str(e)}"
+        return f"Error executing weather forecast for '{resolved_name}': {str(e)}"
 
 @mcp.tool()
 def forecast_economic_indicator(series_id: str, days_to_predict: int = 30) -> str:
