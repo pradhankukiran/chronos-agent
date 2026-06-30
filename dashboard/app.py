@@ -24,7 +24,8 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from core.models import get_forecast          # noqa: E402
-from core.data import fetch_stock_data        # noqa: E402
+from core.data import fetch_stock_data, fetch_company_info        # noqa: E402
+from core.cache import load_model             # noqa: E402
 
 import pandas as pd                           # noqa: E402
 import plotly.graph_objects as go            # noqa: E402
@@ -127,7 +128,15 @@ def _build_forecast(ticker: str, horizon: int) -> dict:
         raise ValueError(f"No historical data was found for ticker '{ticker}' over the last 3 months.")
     current_price = float(hist["y"].iloc[-1])
 
+    # Fetch company metadata and valuation info
+    company_info = fetch_company_info(ticker)
+
     forecast_df = get_forecast(ticker, days_to_predict=horizon)
+    
+    # Load model diagnostics
+    model_data = load_model(ticker)
+    diagnostics = model_data.get("diagnostics", {})
+
     final_predicted = float(forecast_df["hybrid_val"].iloc[-1])
 
     price_change = final_predicted - current_price
@@ -154,6 +163,8 @@ def _build_forecast(ticker: str, horizon: int) -> dict:
         "chart_html": chart_html,
         "horizon": horizon,
         "ticker": ticker,
+        "company_info": company_info,
+        "diagnostics": diagnostics,
     }
 
 
@@ -171,13 +182,38 @@ def _render_chart(hist: pd.DataFrame, forecast: pd.DataFrame, horizon: int) -> s
             line={"color": "#0b0c0c", "width": 2},
         )
     )
+    
+    # Add Uncertainty Bands (Prophet lower/upper boundaries)
+    fig.add_trace(
+        go.Scatter(
+            x=forecast["ds"],
+            y=forecast["hybrid_lower"],
+            mode="lines",
+            line=dict(width=0),
+            showlegend=False,
+            hoverinfo="skip"
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=forecast["ds"],
+            y=forecast["hybrid_upper"],
+            mode="lines",
+            line=dict(width=0),
+            fill='tonexty',
+            fillcolor='rgba(29, 112, 184, 0.15)', # GDS Blue with 15% opacity
+            name="Uncertainty interval",
+            hoverinfo="skip"
+        )
+    )
+
     fig.add_trace(
         go.Scatter(
             x=forecast["ds"],
             y=forecast["hybrid_val"],
             mode="lines",
             name="Hybrid forecast",
-            line={"color": "#1d70b8", "width": 2},
+            line={"color": "#1d70b8", "width": 2.5},
         )
     )
     fig.add_trace(

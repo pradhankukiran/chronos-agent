@@ -9,6 +9,20 @@
     The engine fits a combined mathematical model onto historic daily datasets.
   </div>
 
+  {% if has_results %}
+  <details class="govuk-details" data-module="govuk-details" style="margin-bottom: 30px;">
+    <summary class="govuk-details__summary">
+      <span class="govuk-details__summary-text">
+        About {{ company_info.name }}
+      </span>
+    </summary>
+    <div class="govuk-details__text">
+      <p class="govuk-body"><strong>Sector:</strong> {{ company_info.sector }} &nbsp;|&nbsp; <strong>Industry:</strong> {{ company_info.industry }} &nbsp;|&nbsp; <strong>Employees:</strong> {{ company_info.employees }}</p>
+      <p class="govuk-body">{{ company_info.summary }}</p>
+    </div>
+  </details>
+  {% endif %}
+
   <form action="{{ url_for('index') }}" method="get" class="govuk-form" novalidate id="forecast-form">
     <div class="govuk-form-group">
       <label class="govuk-label govuk-label--l" for="ticker-autocomplete">Ticker symbol</label>
@@ -78,17 +92,166 @@
       </div>
     </div>
 
+    {# Market Essentials Table #}
+    <h3 class="govuk-heading-m" style="margin-top: 30px;">Market Valuation Essentials</h3>
+    <table class="govuk-table" style="margin-bottom: 40px;">
+      <tbody class="govuk-table__body">
+        <tr class="govuk-table__row">
+          <th scope="row" class="govuk-table__header" style="width: 50%;">Market Capitalization</th>
+          <td class="govuk-table__cell">{{ company_info.market_cap }}</td>
+        </tr>
+        <tr class="govuk-table__row">
+          <th scope="row" class="govuk-table__header">Trailing P/E Ratio</th>
+          <td class="govuk-table__cell">{{ company_info.pe_ratio }}</td>
+        </tr>
+        <tr class="govuk-table__row">
+          <th scope="row" class="govuk-table__header">Beta (Volatility vs. Market)</th>
+          <td class="govuk-table__cell">{{ company_info.beta }}</td>
+        </tr>
+        <tr class="govuk-table__row">
+          <th scope="row" class="govuk-table__header">Analyst Recommendation</th>
+          <td class="govuk-table__cell">{{ company_info.recommendation }}</td>
+        </tr>
+        {% if company_info.low_52 and company_info.high_52 %}
+        <tr class="govuk-table__row">
+          <th scope="row" class="govuk-table__header">52-Week Range</th>
+          <td class="govuk-table__cell">${{ "%.2f"|format(company_info.low_52) }} - ${{ "%.2f"|format(company_info.high_52) }}</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+
     {# Chart #}
     <h2 class="govuk-heading-l">Forecast chart</h2>
     <p class="govuk-body-s" style="color:#505a5f; margin-top:-10px;">
-      Chart showing actual values (black) and forecasts: hybrid ensemble model (blue),
+      Chart showing actual values (black) and forecasts: hybrid ensemble model (blue) with shaded uncertainty intervals,
       Prophet component (red) and XGBoost component (green).
     </p>
     <div class="govuk-!-margin-bottom-9">
       {{ chart_html|safe }}
     </div>
 
-    {# Table #}
+    {# Diagnostics Grid Layout #}
+    <h2 class="govuk-heading-l" style="margin-top: 40px;">Model Diagnostics & Insights</h2>
+    
+    <div class="govuk-grid-row" style="margin-bottom: 30px;">
+      <div class="govuk-grid-column-one-half">
+        <h3 class="govuk-heading-m">Model Accuracy & Backtesting</h3>
+        <table class="govuk-table">
+          <tbody class="govuk-table__body">
+            <tr class="govuk-table__row">
+              <th scope="row" class="govuk-table__header">Backtest Accuracy (R²)</th>
+              <td class="govuk-table__cell govuk-!-font-weight-bold">{{ "%.2f"|format(diagnostics.accuracy_rating) }}%</td>
+            </tr>
+            <tr class="govuk-table__row">
+              <th scope="row" class="govuk-table__header">Backtest Error (MAE)</th>
+              <td class="govuk-table__cell">${{ "%.2f"|format(diagnostics.backtest_mae) }}</td>
+            </tr>
+            <tr class="govuk-table__row">
+              <th scope="row" class="govuk-table__header">Durbin-Watson Stat</th>
+              <td class="govuk-table__cell">{{ "%.3f"|format(diagnostics.durbin_watson) }}</td>
+            </tr>
+            <tr class="govuk-table__row">
+              <th scope="row" class="govuk-table__header">Residual Standard Dev</th>
+              <td class="govuk-table__cell">${{ "%.2f"|format(diagnostics.residual_std) }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="govuk-hint" style="font-size: 14px; margin-top:-15px;">
+          Note: Durbin-Watson values near 2.0 indicate that the model has successfully captured all systematic pattern residuals.
+        </div>
+      </div>
+      
+      <div class="govuk-grid-column-one-half">
+        <h3 class="govuk-heading-m">Seasonality & Trend Cycles</h3>
+        <table class="govuk-table">
+          <tbody class="govuk-table__body">
+            <tr class="govuk-table__row">
+              <th scope="row" class="govuk-table__header">Strongest Weekly Day</th>
+              <td class="govuk-table__cell" style="color: #00703c; font-weight:bold;">{{ diagnostics.weekly_best }}</td>
+            </tr>
+            <tr class="govuk-table__row">
+              <th scope="row" class="govuk-table__header">Weakest Weekly Day</th>
+              <td class="govuk-table__cell" style="color: #d4351c; font-weight:bold;">{{ diagnostics.weekly_worst }}</td>
+            </tr>
+            <tr class="govuk-table__row">
+              <th scope="row" class="govuk-table__header">Strongest Seasonal Month</th>
+              <td class="govuk-table__cell" style="color: #00703c; font-weight:bold;">{{ diagnostics.yearly_best }}</td>
+            </tr>
+            <tr class="govuk-table__row">
+              <th scope="row" class="govuk-table__header">Weakest Seasonal Month</th>
+              <td class="govuk-table__cell" style="color: #d4351c; font-weight:bold;">{{ diagnostics.yearly_worst }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# XGBoost Details #}
+    <h3 class="govuk-heading-m">XGBoost Machine Learning Component</h3>
+    <p class="govuk-body">
+      The XGBoost component corrected the Prophet baseline trend line by an average of <strong>${{ "%.2f"|format(diagnostics.avg_offset) }}</strong> per day to capture short-term price momentum.
+    </p>
+    
+    <h4 class="govuk-heading-s">Feature Importance Rating</h4>
+    <p class="govuk-body-s" style="color:#505a5f; margin-top:-5px;">Shows which engineered features contributed most heavily to the machine learning predictions:</p>
+    <table class="govuk-table" style="font-size: 16px; margin-bottom: 40px;">
+      <thead class="govuk-table__head">
+        <tr class="govuk-table__row">
+          <th class="govuk-table__header">Feature Name</th>
+          <th class="govuk-table__header">Description</th>
+          <th class="govuk-table__header govuk-table__header--numeric">Relative Importance</th>
+        </tr>
+      </thead>
+      <tbody class="govuk-table__body">
+        {% for feat, imp in diagnostics.feature_importance.items()|sort(attribute='1', reverse=True) %}
+        <tr class="govuk-table__row">
+          <td class="govuk-table__cell"><code>{{ feat }}</code></td>
+          <td class="govuk-table__cell">
+            {% if feat == 'sma_5' %}5-day Simple Moving Average
+            {% elif feat == 'sma_20' %}20-day Simple Moving Average
+            {% elif feat == 'returns' %}Day-over-day Percentage Return
+            {% elif feat == 'lag_1' %}Close Price from the Previous Day
+            {% elif feat == 'lag_7' %}Close Price from One Week Ago
+            {% elif feat == 'prophet_trend' %}Prophet Long-term Bayesian Trend Line
+            {% else %}Engineered feature
+            {% endif %}
+          </td>
+          <td class="govuk-table__cell govuk-table__cell--numeric">{{ "%.1f"|format(imp * 100) }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {# Prophet Changepoints #}
+    <h3 class="govuk-heading-m">Bayesian Trend Changepoints</h3>
+    <p class="govuk-body">The Stan Bayesian procedure detected significant shifts in the asset's underlying growth rate at the following dates:</p>
+    <table class="govuk-table" style="font-size: 16px; margin-bottom: 50px;">
+      <thead class="govuk-table__head">
+        <tr class="govuk-table__row">
+          <th class="govuk-table__header">Date Detected</th>
+          <th class="govuk-table__header">Growth Rate Shift Direction</th>
+          <th class="govuk-table__header govuk-table__header--numeric">Magnitude of Shift</th>
+        </tr>
+      </thead>
+      <tbody class="govuk-table__body">
+        {% for cp in diagnostics.changepoints %}
+        <tr class="govuk-table__row">
+          <td class="govuk-table__cell">{{ cp.date }}</td>
+          <td class="govuk-table__cell">
+            {% if cp.delta > 0 %}
+            <span style="color:#00703c; font-weight:bold;">↑ Positive Acceleration</span>
+            {% else %}
+            <span style="color:#d4351c; font-weight:bold;">↓ Negative Deceleration</span>
+            {% endif %}
+          </td>
+          <td class="govuk-table__cell govuk-table__cell--numeric">{{ "%.5f"|format(cp.delta) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {# Table Breakdown #}
     <h2 class="govuk-heading-l" id="forecast-breakdown">Forecast breakdown</h2>
     <table class="govuk-table">
       <caption class="govuk-table__caption govuk-table__caption--m">

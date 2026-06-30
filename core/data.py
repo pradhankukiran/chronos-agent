@@ -39,6 +39,58 @@ def fetch_stock_data(ticker: str, period: str = "2y") -> pd.DataFrame:
     
     return df
 
+def fetch_company_info(ticker: str) -> dict:
+    """
+    Retrieves key company metadata and financial indicators from Yahoo Finance.
+    Returns a dictionary of cleaned metrics.
+    """
+    ticker = ticker.upper().strip()
+    try:
+        t = yf.Ticker(ticker)
+        info = t.info
+        
+        # Format Market Cap to a readable string (e.g. 2.45 Trillion)
+        cap = info.get("marketCap")
+        if cap:
+            if cap >= 1e12:
+                cap_str = f"${cap / 1e12:.2f} Trillion"
+            elif cap >= 1e9:
+                cap_str = f"${cap / 1e9:.2f} Billion"
+            else:
+                cap_str = f"${cap / 1e6:.2f} Million"
+        else:
+            cap_str = "N/A"
+
+        return {
+            "name": info.get("longName") or info.get("shortName") or ticker,
+            "summary": info.get("longBusinessSummary") or "Business summary is currently unavailable.",
+            "sector": info.get("sector") or "N/A",
+            "industry": info.get("industry") or "N/A",
+            "employees": f"{info.get('fullTimeEmployees', 0):,}" if info.get("fullTimeEmployees") else "N/A",
+            "market_cap": cap_str,
+            "pe_ratio": f"{info.get('trailingPE'):.2f}" if info.get("trailingPE") else "N/A",
+            "beta": f"{info.get('beta'):.2f}" if info.get("beta") else "N/A",
+            "recommendation": info.get("recommendationKey", "N/A").replace("_", " ").title(),
+            "high_52": info.get("fiftyTwoWeekHigh"),
+            "low_52": info.get("fiftyTwoWeekLow")
+        }
+    except Exception:
+        # Fallback dictionary if API call fails
+        return {
+            "name": ticker,
+            "summary": "Financial metadata is currently unavailable for this asset.",
+            "sector": "N/A",
+            "industry": "N/A",
+            "employees": "N/A",
+            "market_cap": "N/A",
+            "pe_ratio": "N/A",
+            "beta": "N/A",
+            "recommendation": "N/A",
+            "high_52": None,
+            "low_52": None
+        }
+
+
 def add_technical_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     Generates technical indicators and lag features for the XGBoost model.
