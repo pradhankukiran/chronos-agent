@@ -9,7 +9,11 @@ from core.models import get_forecast
 from core.data import fetch_stock_data
 
 # Initialize FastMCP Server
-mcp = FastMCP("ChronosAgent")
+mcp = FastMCP(
+    "ChronosAgent",
+    host=os.environ.get("FASTMCP_HOST", "0.0.0.0"),
+    port=int(os.environ.get("PORT", os.environ.get("FASTMCP_PORT", 8000)))
+)
 
 @mcp.tool()
 def forecast_asset_price(ticker: str, days_to_predict: int = 30) -> str:
@@ -55,5 +59,9 @@ def forecast_asset_price(ticker: str, days_to_predict: int = 30) -> str:
         return f"Error executing forecast for ticker '{ticker}': {str(e)}"
 
 if __name__ == "__main__":
-    # Start the MCP server using standard input/output (stdio) communication
-    mcp.run()
+    # If PORT is specified in the environment, run as SSE (for cloud deployment)
+    if "PORT" in os.environ:
+        mcp.run(transport="sse")
+    else:
+        # Start the MCP server using standard input/output (stdio) communication
+        mcp.run()
