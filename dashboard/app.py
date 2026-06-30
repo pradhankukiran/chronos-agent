@@ -123,6 +123,8 @@ def _coerce_horizon(raw: str) -> int:
 def _build_forecast(ticker: str, horizon: int) -> dict:
     # Recent actuals (for chart context + current price).
     hist = fetch_stock_data(ticker, period="3mo")
+    if hist.empty:
+        raise ValueError(f"No historical data was found for ticker '{ticker}' over the last 3 months.")
     current_price = float(hist["y"].iloc[-1])
 
     forecast_df = get_forecast(ticker, days_to_predict=horizon)
@@ -212,7 +214,7 @@ def _render_chart(hist: pd.DataFrame, forecast: pd.DataFrame, horizon: int) -> s
 
     return fig.to_html(
         full_html=False,
-        include_plotlyjs="cdn",
+        include_plotlyjs=False,
         config={"displayModeBar": False, "responsive": True},
     )
 

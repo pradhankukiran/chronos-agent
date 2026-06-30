@@ -54,7 +54,7 @@
 
   {% if has_results %}
     {# Headline metrics #}
-    <h2 class="govuk-heading-l">Projected overview</h2>
+    <h2 class="govuk-heading-l" id="forecast-results">Projected overview</h2>
     <div class="govuk-grid-row">
       <div class="govuk-grid-column-one-third">
         <div class="govuk-!-margin-bottom-2">
@@ -166,6 +166,12 @@
           hiddenInput.value = symbol;
         }
       });
+
+      // Smooth scroll to results if present on load
+      var resultsSection = document.getElementById('forecast-results');
+      if (resultsSection) {
+        resultsSection.scrollIntoView({ behavior: 'smooth' });
+      }
     });
   </script>
 {% endblock %}

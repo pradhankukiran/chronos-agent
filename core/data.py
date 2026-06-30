@@ -15,8 +15,6 @@ def fetch_stock_data(ticker: str, period: str = "2y") -> pd.DataFrame:
         raise ValueError(f"No historical data found for ticker '{ticker}'")
     
     # Format to a standard DataFrame
-    # Note: yfinance Close column might be multi-indexed if not simplified.
-    # We reset the index to bring 'Date' out as a column.
     df = raw_data.reset_index()
     
     # Select only the Date and Close price columns
@@ -25,12 +23,19 @@ def fetch_stock_data(ticker: str, period: str = "2y") -> pd.DataFrame:
     # Rename columns to Prophet's standard format (ds: date, y: value)
     df.columns = ['ds', 'y']
     
-    # Remove timezone info if present (Prophet requires timezone-naive datestamps)
+    # Remove timezone info if present
     if df['ds'].dt.tz is not None:
         df['ds'] = df['ds'].dt.tz_localize(None)
         
     # Ensure values are float64 type
     df['y'] = df['y'].astype(float)
+    
+    # Verify we have enough history to calculate indicators (like 20-day SMA)
+    if len(df) < 20:
+        raise ValueError(
+            f"Ticker '{ticker}' has only {len(df)} days of history. "
+            f"A minimum of 20 trading days is required to calculate indicators."
+        )
     
     return df
 
