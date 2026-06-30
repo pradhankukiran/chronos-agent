@@ -9,23 +9,14 @@
     The engine fits a combined mathematical model onto historic daily datasets.
   </div>
 
-  <form action="{{ url_for('index') }}" method="get" class="govuk-form" novalidate>
+  <form action="{{ url_for('index') }}" method="get" class="govuk-form" novalidate id="forecast-form">
     <div class="govuk-form-group">
-      <label class="govuk-label govuk-label--l" for="ticker">Ticker symbol</label>
+      <label class="govuk-label govuk-label--l" for="ticker-autocomplete">Ticker symbol</label>
       <div id="ticker-hint" class="govuk-hint">
         Enter the market identifier, for example AAPL for Apple Inc. or BTC-USD for Bitcoin.
       </div>
-      <input
-        class="govuk-input govuk-input--width-10"
-        id="ticker"
-        name="ticker"
-        type="text"
-        spellcheck="false"
-        autocapitalize="characters"
-        autocorrect="off"
-        value="{{ ticker or '' }}"
-        aria-describedby="ticker-hint"
-      >
+      <div id="ticker-autocomplete-container" style="max-width: 25rem;"></div>
+      <input type="hidden" id="ticker" name="ticker" value="{{ ticker or '' }}">
     </div>
 
     <div class="govuk-form-group">
@@ -131,4 +122,50 @@
       </strong>
     </div>
   {% endif %}
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      var container = document.querySelector('#ticker-autocomplete-container');
+      var hiddenInput = document.getElementById('ticker');
+      
+      // Initialize GDS Accessible Autocomplete
+      accessibleAutocomplete({
+        element: container,
+        id: 'ticker-autocomplete',
+        name: 'ticker_search_raw',
+        defaultValue: '{{ ticker or "" }}',
+        placeholder: 'Search for a company or ticker...',
+        displayMenu: 'overlay',
+        minLength: 1,
+        source: function (query, populateResults) {
+          fetch('/api/search?q=' + encodeURIComponent(query))
+            .then(function (response) { return response.json(); })
+            .then(function (data) {
+              var suggestions = data.map(function (item) {
+                return item.symbol + ' - ' + item.name + ' (' + item.exch + ')';
+              });
+              populateResults(suggestions);
+            });
+        },
+        onConfirm: function (val) {
+          if (val) {
+            var symbol = val.split(' ')[0].toUpperCase();
+            hiddenInput.value = symbol;
+          } else {
+            hiddenInput.value = '';
+          }
+        }
+      });
+
+      // Handle raw submissions (e.g. typing manually and pressing Enter)
+      var form = document.getElementById('forecast-form');
+      form.addEventListener('submit', function (e) {
+        var visibleInput = document.getElementById('ticker-autocomplete');
+        if (visibleInput && visibleInput.value) {
+          var symbol = visibleInput.value.split(' ')[0].toUpperCase().trim();
+          hiddenInput.value = symbol;
+        }
+      });
+    });
+  </script>
 {% endblock %}

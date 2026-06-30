@@ -9,6 +9,7 @@
     <link rel="mask-icon" href="{{ url_for('static', filename='assets/images/govuk-icon-mask.svg') }}" color="#0b0c0c" />
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='assets/images/favicon.svg') }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='govuk/govuk-frontend.min.css') }}" />
+    <link rel="stylesheet" href="https://unpkg.com/accessible-autocomplete@3.0.1/dist/accessible-autocomplete.min.css" />
   </head>
   <body class="govuk-template__body govuk-js-supported">
     <a href="#main-content" class="govuk-skip-link" data-module="govuk-skip-link">Skip to main content</a>
@@ -53,6 +54,7 @@
       </main>
     </div>
 
+    <script src="https://unpkg.com/accessible-autocomplete@3.0.1/dist/accessible-autocomplete.min.js"></script>
     <script src="{{ url_for('static', filename='govuk/all.bundle.min.js') }}"></script>
   </body>
 </html>

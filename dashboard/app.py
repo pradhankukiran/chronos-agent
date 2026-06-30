@@ -14,6 +14,7 @@ from flask import (
     url_for,
     make_response,
     send_from_directory,
+    jsonify,
 )
 
 # Make the project root importable so `core` resolves when launched from
@@ -27,6 +28,8 @@ from core.data import fetch_stock_data        # noqa: E402
 
 import pandas as pd                           # noqa: E402
 import plotly.graph_objects as go            # noqa: E402
+import requests                               # noqa: E402
+
 
 
 def create_app() -> Flask:
@@ -45,6 +48,31 @@ def create_app() -> Flask:
         return send_from_directory(
             os.path.join(app.static_folder, "assets"), filename
         )
+
+    @app.route("/api/search")
+    def search_tickers():
+        query = request.args.get("q", "").strip()
+        if not query:
+            return jsonify([])
+        try:
+            url = f"https://query1.finance.yahoo.com/v1/finance/search?q={query}&quotesCount=8&newsCount=0"
+            headers = {"User-Agent": "Mozilla/5.0"}
+            response = requests.get(url, headers=headers, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                quotes = data.get("quotes", [])
+                results = [
+                    {
+                        "symbol": q.get("symbol"),
+                        "name": q.get("shortname") or q.get("longname") or q.get("symbol"),
+                        "exch": q.get("exchange")
+                    }
+                    for q in quotes if q.get("symbol")
+                ]
+                return jsonify(results)
+            return jsonify([])
+        except Exception:
+            return jsonify([])
 
     @app.route("/cookie-preference", methods=["POST"])
     def cookie_preference():
