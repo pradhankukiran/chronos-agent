@@ -79,6 +79,14 @@ def create_app() -> Flask:
     def index():
         return redirect(url_for("finance"))
 
+    # Route: /cookie-preference
+    # Set essential cookies policy to clear GDS cookie banner
+    @app.route("/cookie-preference", methods=["POST"])
+    def cookie_preference():
+        response = make_response(redirect(request.referrer or url_for("finance")))
+        response.set_cookie("cookies_policy", "accepted", max_age=31536000)
+        return response
+
     # Route: /finance
     @app.route("/finance", methods=["GET"])
     def finance():
