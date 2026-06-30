@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <a href="#top" class="govuk-back-link" data-module="govuk-back-link">Back to GOV.UK</a>
+
+  <span class="govuk-caption-xl">Financial forecasting</span>
+  <h1 class="govuk-heading-xl">Forecast stock and asset prices</h1>
+
+  <div class="govuk-inset-text">
+    Use this service to calculate price predictions for publicly traded assets.
+    The engine fits a combined mathematical model onto historic daily datasets.
+  </div>
+
+  <form action="{{ url_for('index') }}" method="get" class="govuk-form" novalidate>
+    <div class="govuk-form-group">
+      <label class="govuk-label govuk-label--l" for="ticker">Ticker symbol</label>
+      <div id="ticker-hint" class="govuk-hint">
+        Enter the market identifier, for example AAPL for Apple Inc. or BTC-USD for Bitcoin.
+      </div>
+      <input
+        class="govuk-input govuk-input--width-10"
+        id="ticker"
+        name="ticker"
+        type="text"
+        spellcheck="false"
+        autocapitalize="characters"
+        autocorrect="off"
+        value="{{ ticker or '' }}"
+        aria-describedby="ticker-hint"
+      >
+    </div>
+
+    <div class="govuk-form-group">
+      <label class="govuk-label govuk-label--l" for="horizon">Forecasting horizon (days)</label>
+      <div id="horizon-hint" class="govuk-hint">Choose how many days into the future to project. The horizon must be between 5 and 90.</div>
+      <select class="govuk-select" id="horizon" name="horizon" aria-describedby="horizon-hint">
+        {% for opt in [7, 14, 30, 45, 60, 90] %}
+          <option value="{{ opt }}" {{ 'selected' if opt == horizon else '' }}>{{ opt }} days</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="govuk-button-group">
+      <button type="submit" class="govuk-button" data-module="govuk-button">Calculate forecast</button>
+    </div>
+  </form>
+
+  <hr class="govuk-section-break govuk-section-break--xl govuk-section-break--visible">
+
+  {% if error %}
+    <div class="govuk-error-summary" data-module="govuk-error-summary" aria-labelledby="error-summary-title" role="alert">
+      <h2 class="govuk-error-summary__title" id="error-summary-title">There is a problem</h2>
+      <div class="govuk-error-summary__body">
+        <p class="govuk-body">{{ error }}</p>
+      </div>
+    </div>
+    <div class="govuk-warning-text">
+      <span class="govuk-warning-text__icon" aria-hidden="true">!</span>
+      <strong class="govuk-warning-text__text">
+        <span class="govuk-warning-text__assistive">Warning</span>
+        The forecast could not be completed. Please check the ticker symbol and try again.
+      </strong>
+    </div>
+  {% endif %}
+
+  {% if has_results %}
+    {# Headline metrics #}
+    <h2 class="govuk-heading-l">Projected overview</h2>
+    <div class="govuk-grid-row">
+      <div class="govuk-grid-column-one-third">
+        <div class="govuk-!-margin-bottom-2">
+          <span class="govuk-caption-m">Current price</span>
+          <p class="govuk-heading-l" style="margin-bottom:0">${{ "%.2f"|format(current_price) }}</p>
+        </div>
+      </div>
+      <div class="govuk-grid-column-one-third">
+        <div class="govuk-!-margin-bottom-2">
+          <span class="govuk-caption-m">Forecast price in {{ horizon }} days</span>
+          <p class="govuk-heading-l" style="margin-bottom:0">${{ "%.2f"|format(final_predicted) }}</p>
+        </div>
+      </div>
+      <div class="govuk-grid-column-one-third">
+        <div class="govuk-!-margin-bottom-2">
+          <span class="govuk-caption-m">Projected trend</span>
+          <p class="govuk-heading-l" style="margin-bottom:0; color: {{ '#00703c' if price_change >= 0 else '#d4351c' }}">
+            {{ "%+.2f"|format(pct_change) }}%
+          </p>
+        </div>
+      </div>
+    </div>
+
+    {# Chart #}
+    <h2 class="govuk-heading-l">Forecast chart</h2>
+    <p class="govuk-body-s" style="color:#505a5f; margin-top:-10px;">
+      Chart showing actual values (black) and forecasts: hybrid ensemble model (blue),
+      Prophet component (red) and XGBoost component (green).
+    </p>
+    <div class="govuk-!-margin-bottom-9">
+      {{ chart_html|safe }}
+    </div>
+
+    {# Table #}
+    <h2 class="govuk-heading-l" id="forecast-breakdown">Forecast breakdown</h2>
+    <table class="govuk-table">
+      <caption class="govuk-table__caption govuk-table__caption--m">
+        Daily hybrid forecast for {{ ticker }} over the next {{ horizon }} days
+      </caption>
+      <thead class="govuk-table__head">
+        <tr class="govuk-table__row">
+          <th scope="col" class="govuk-table__header">Date</th>
+          <th scope="col" class="govuk-table__header govuk-table__header--numeric">Prophet baseline (trend)</th>
+          <th scope="col" class="govuk-table__header govuk-table__header--numeric">XGBoost momentum</th>
+          <th scope="col" class="govuk-table__header govuk-table__header--numeric">Hybrid forecast</th>
+        </tr>
+      </thead>
+      <tbody class="govuk-table__body">
+        {% for row in forecast_rows %}
+        <tr class="govuk-table__row">
+          <td class="govuk-table__cell">{{ row.date }}</td>
+          <td class="govuk-table__cell govuk-table__cell--numeric">${{ "%.2f"|format(row.prophet) }}</td>
+          <td class="govuk-table__cell govuk-table__cell--numeric">${{ "%.2f"|format(row.xgb) }}</td>
+          <td class="govuk-table__cell govuk-table__cell--numeric govuk-!-font-weight-bold">${{ "%.2f"|format(row.hybrid) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="govuk-warning-text">
+      <span class="govuk-warning-text__icon" aria-hidden="true">!</span>
+      <strong class="govuk-warning-text__text">
+        <span class="govuk-warning-text__assistive">Warning</span>
+        Price projections are calculations based on historical values. Past performance is not a guarantee of future outcomes.
+      </strong>
+    </div>
+  {% endif %}
+{% endblock %}

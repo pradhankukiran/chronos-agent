@@ -16,7 +16,7 @@ The application features a modular, production-grade architecture split into thr
                              │ (JSON RPC over stdio)
                              ▼
 ┌─────────────────────────────────────────────────────────┐
-│               Streamlit Web Dashboard                   │
+│                 Flask Web Dashboard                     │
 │        (UK Gov GDS Accessibility Theme UI)              │
 └────────────────────────────┬────────────────────────────┘
                              │
@@ -69,7 +69,7 @@ chronos-agent/
 │   └── cache.py            # Local model serialization & caching
 │
 ├── dashboard/              # Visual Frontend
-│   └── app.py              # Streamlit GDS Dashboard
+│   └── app.py              # Flask GDS Dashboard
 │
 ├── mcp_server/             # AI Agent Integration
 │   ├── __init__.py
@@ -97,11 +97,11 @@ pip install -r requirements.txt
 
 ---
 
-## 📈 Running the Streamlit Dashboard
+## 📈 Running the Flask Dashboard
 
 To open the UK GDS styled interactive web interface:
 ```bash
-streamlit run dashboard/app.py
+python dashboard/app.py
 ```
 This opens the app in your browser at `http://localhost:8501`. You can enter any ticker symbol, choose the forecast horizon, and view interactive charts displaying the performance of the Prophet, XGBoost, and combined Hybrid models.
 

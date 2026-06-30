@@ -1,414 +1,196 @@
+"""Chronos Forecasting Service - Flask web application.
+
+A GOV.UK Design System (govuk-frontend) front-end for the hybrid
+Prophet + XGBoost forecasting engine in `core.models`.
+"""
 import os
 import sys
-import pandas as pd
-import streamlit as st
 
-# Add the project root to path so we can import from core
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from core.models import get_forecast
-from core.data import fetch_stock_data
-
-# Set Page Config (Centered layout matches GOV.UK 960px grid)
-st.set_page_config(
-    page_title="Chronos Forecasting Service - GOV.UK",
-    layout="centered",
-    initial_sidebar_state="collapsed"
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    make_response,
+    send_from_directory,
 )
 
-# Complete GOV.UK Frontend Design System Override
-st.markdown("""
-<style>
-    /* 1. Global Page Resets */
-    html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
-        font-family: "GDS Transport", Arial, sans-serif !important;
-        background-color: #f3f2f1 !important; /* GDS light grey background */
-        color: #0b0c0c !important; /* GDS text black */
-    }
-    
-    /* Center and constrain main content to GOV.UK 960px grid */
-    .main .block-container {
-        max-width: 960px !important;
-        padding: 0px 30px 50px 30px !important;
-        background-color: #ffffff !important; /* Main page is white */
-        min-height: 100vh;
-        border-left: 1px solid #b1b4b6;
-        border-right: 1px solid #b1b4b6;
-        box-shadow: none !important;
+# Make the project root importable so `core` resolves when launched from
+# the dashboard directory (e.g. `flask --app dashboard.app run`).
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from core.models import get_forecast          # noqa: E402
+from core.data import fetch_stock_data        # noqa: E402
+
+import pandas as pd                           # noqa: E402
+import plotly.graph_objects as go            # noqa: E402
+
+
+def create_app() -> Flask:
+    app = Flask(
+        __name__,
+        static_folder="static",
+        template_folder="templates",
+    )
+    app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "dev-secret")
+
+    # The compiled govuk-frontend CSS references fonts and images with
+    # root-relative URLs (`/assets/fonts/...`, `/assets/images/...`). Serve
+    # them from the local static/assets directory so they resolve correctly.
+    @app.route("/assets/<path:filename>")
+    def govuk_assets(filename: str):
+        return send_from_directory(
+            os.path.join(app.static_folder, "assets"), filename
+        )
+
+    @app.route("/cookie-preference", methods=["POST"])
+    def cookie_preference():
+        """Record the user's cookie choice and dismiss the banner."""
+        choice = request.form.get("cookies", "reject")
+        resp = redirect(url_for("index", **request.args))
+        resp.set_cookie(
+            "cookies_policy",
+            value=f"{{\"analytics\":{str(choice == 'accept').lower()}}}",
+            max_age=365 * 24 * 60 * 60,
+            httponly=True,
+            samesite="Lax",
+        )
+        return resp
+
+    @app.route("/", methods=["GET"])
+    def index():
+        ticker = (request.args.get("ticker") or "").upper().strip()
+        horizon_raw = request.args.get("horizon", "30")
+
+        context = {
+            "ticker": ticker,
+            "horizon": _coerce_horizon(horizon_raw),
+            "has_results": False,
+            "error": None,
+        }
+
+        if ticker:
+            try:
+                context.update(_build_forecast(ticker, context["horizon"]))
+                context["has_results"] = True
+            except Exception as exc:  # noqa: BLE001 - surface a friendly message
+                context["error"] = str(exc)
+
+        return render_template("index.html", **context)
+
+    return app
+
+
+def _coerce_horizon(raw: str) -> int:
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return 30
+    return min(max(value, 5), 90)
+
+
+def _build_forecast(ticker: str, horizon: int) -> dict:
+    # Recent actuals (for chart context + current price).
+    hist = fetch_stock_data(ticker, period="3mo")
+    current_price = float(hist["y"].iloc[-1])
+
+    forecast_df = get_forecast(ticker, days_to_predict=horizon)
+    final_predicted = float(forecast_df["hybrid_val"].iloc[-1])
+
+    price_change = final_predicted - current_price
+    pct_change = (price_change / current_price) * 100.0 if current_price else 0.0
+
+    chart_html = _render_chart(hist, forecast_df, horizon)
+
+    rows = [
+        {
+            "date": row["ds"].strftime("%Y-%m-%d"),
+            "prophet": row["prophet_val"],
+            "xgb": row["xgb_val"],
+            "hybrid": row["hybrid_val"],
+        }
+        for row in forecast_df.to_dict("records")
+    ]
+
+    return {
+        "current_price": current_price,
+        "final_predicted": final_predicted,
+        "price_change": price_change,
+        "pct_change": pct_change,
+        "forecast_rows": rows,
+        "chart_html": chart_html,
+        "horizon": horizon,
+        "ticker": ticker,
     }
 
-    /* Hide Streamlit elements */
-    [data-testid="stHeader"] {
-        background-color: rgba(0,0,0,0) !important;
-        border-bottom: none !important;
-    }
-    #MainMenu, footer {
-        visibility: hidden !important;
-    }
-    
-    /* 2. Official GOV.UK Header Bar */
-    .govuk-header {
-        background-color: #0b0c0c;
-        padding: 10px 0;
-        border-bottom: 10px solid #1d70b8; /* GDS Blue */
-        margin-left: -30px;
-        margin-right: -30px;
-        margin-top: -60px;
-        padding-left: 30px;
-        padding-right: 30px;
-    }
-    .govuk-header-logo {
-        display: flex;
-        align-items: center;
-        text-decoration: none;
-    }
-    .govuk-header-logo-text {
-        color: #ffffff !important;
-        font-size: 24px !important;
-        font-weight: 700 !important;
-        font-family: Arial, sans-serif !important;
-    }
-    .govuk-crown-logo {
-        fill: #ffffff;
-        margin-right: 10px;
-        width: 30px;
-        height: 30px;
-    }
-    
-    /* Phase Banner */
-    .govuk-phase-banner {
-        padding: 8px 0;
-        border-bottom: 1px solid #b1b4b6;
-        margin-bottom: 25px;
-        font-size: 16px;
-    }
-    .govuk-phase-tag {
-        background-color: #1d70b8;
-        color: #ffffff;
-        font-weight: 700;
-        font-size: 12px;
-        padding: 2px 8px;
-        margin-right: 10px;
-        text-transform: uppercase;
-    }
-    
-    /* Back Link component */
-    .govuk-back-link {
-        font-size: 16px;
-        color: #0b0c0c !important;
-        text-decoration: underline;
-        margin-bottom: 30px;
-        display: inline-block;
-        cursor: pointer;
-    }
 
-    /* 3. Typography & Form Controls */
-    h1.govuk-heading-xl {
-        font-size: 48px !important;
-        font-weight: 700 !important;
-        margin-top: 20px !important;
-        margin-bottom: 30px !important;
-        color: #0b0c0c !important;
-    }
-    h2.govuk-heading-l {
-        font-size: 36px !important;
-        font-weight: 700 !important;
-        border-bottom: 4px solid #0b0c0c !important;
-        padding-bottom: 10px !important;
-        margin-top: 40px !important;
-        margin-bottom: 20px !important;
-        color: #0b0c0c !important;
-    }
-    
-    /* Inputs */
-    .govuk-form-group {
-        margin-bottom: 30px;
-    }
-    .govuk-label {
-        font-size: 20px !important;
-        font-weight: 700 !important;
-        color: #0b0c0c !important;
-        margin-bottom: 5px !important;
-        display: block;
-    }
-    .govuk-hint {
-        font-size: 16px !important;
-        color: #505a5f !important;
-        margin-bottom: 15px !important;
-        display: block;
-    }
-    
-    /* Streamlit Text Input Override */
-    div[data-testid="stTextInput"] input {
-        border: 2px solid #0b0c0c !important;
-        border-radius: 0px !important;
-        font-size: 19px !important;
-        padding: 8px 12px !important;
-        height: auto !important;
-    }
-    div[data-testid="stTextInput"] input:focus {
-        outline: 3px solid #ffdd00 !important; /* Yellow focus ring */
-        outline-offset: 0px !important;
-        border: 2px solid #0b0c0c !important;
-    }
+def _render_chart(hist: pd.DataFrame, forecast: pd.DataFrame, horizon: int) -> str:
+    """Build a Plotly line chart and return its embeddable HTML."""
+    fig = go.Figure()
 
-    /* GDS Green Primary Button */
-    div.stButton > button {
-        background-color: #00703c !important; /* GDS Green */
-        color: #ffffff !important;
-        font-size: 19px !important;
-        font-weight: 700 !important;
-        padding: 10px 20px !important;
-        border: none !important;
-        border-radius: 0px !important;
-        border-bottom: 3px solid #005a30 !important;
-        box-shadow: none !important;
-        width: auto !important;
-        cursor: pointer !important;
-    }
-    div.stButton > button:hover {
-        background-color: #005a30 !important;
-    }
-    div.stButton > button:focus {
-        background-color: #ffdd00 !important;
-        color: #0b0c0c !important;
-        border: 3px solid #0b0c0c !important;
-        outline: none !important;
-    }
+    actual = hist.tail(60)
+    fig.add_trace(
+        go.Scatter(
+            x=actual["ds"],
+            y=actual["y"],
+            mode="lines",
+            name="Actual price",
+            line={"color": "#0b0c0c", "width": 2},
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=forecast["ds"],
+            y=forecast["hybrid_val"],
+            mode="lines",
+            name="Hybrid forecast",
+            line={"color": "#1d70b8", "width": 2},
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=forecast["ds"],
+            y=forecast["prophet_val"],
+            mode="lines",
+            name="Prophet component",
+            line={"color": "#d4351c", "dash": "dot"},
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=forecast["ds"],
+            y=forecast["xgb_val"],
+            mode="lines",
+            name="XGBoost component",
+            line={"color": "#00703c", "dash": "dot"},
+        )
+    )
 
-    /* 4. GDS Warning Text Callout */
-    .govuk-warning-text {
-        display: flex;
-        align-items: flex-start;
-        margin: 20px 0;
-    }
-    .govuk-warning-icon {
-        background-color: #0b0c0c;
-        color: #ffffff;
-        font-size: 24px;
-        font-weight: 700;
-        width: 35px;
-        height: 35px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-right: 15px;
-        flex-shrink: 0;
-    }
-    .govuk-warning-text-content {
-        font-size: 19px;
-        font-weight: 700;
-    }
+    fig.update_layout(
+        template="plotly_white",
+        margin={"l": 20, "r": 20, "t": 20, "b": 20},
+        height=420,
+        legend={
+            "orientation": "h",
+            "y": -0.2,
+            "x": 0,
+        },
+        xaxis={"title": None},
+        yaxis={"title": "Price (USD)", "tickprefix": "$"},
+    )
 
-    /* 5. GDS Inset Text */
-    .govuk-inset-text {
-        border-left: 10px solid #b1b4b6 !important;
-        background-color: #ffffff !important;
-        padding: 15px 20px !important;
-        margin: 25px 0 !important;
-        font-size: 19px !important;
-        color: #0b0c0c !important;
-        line-height: 1.5 !important;
-    }
+    return fig.to_html(
+        full_html=False,
+        include_plotlyjs="cdn",
+        config={"displayModeBar": False, "responsive": True},
+    )
 
-    /* 6. GDS Metrics Grid (Clean thin borders instead of modern cards) */
-    .gds-metric-row {
-        display: flex;
-        border-top: 1px solid #b1b4b6;
-        border-bottom: 1px solid #b1b4b6;
-        padding: 20px 0;
-        margin: 30px 0;
-    }
-    .gds-metric-cell {
-        flex: 1;
-        padding-right: 20px;
-    }
-    .gds-metric-label {
-        font-size: 16px;
-        color: #505a5f;
-        text-transform: uppercase;
-        font-weight: 700;
-        margin-bottom: 5px;
-    }
-    .gds-metric-value {
-        font-size: 48px;
-        font-weight: 700;
-        color: #0b0c0c;
-    }
-    .gds-metric-change {
-        font-size: 19px;
-        font-weight: 700;
-    }
 
-    /* 7. Clean GDS Tables */
-    div[data-testid="stDataFrame"] {
-        border: none !important;
-        border-radius: 0px !important;
-    }
-    .govuk-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 20px 0;
-        font-size: 19px;
-    }
-    .govuk-table th {
-        border-bottom: 2px solid #0b0c0c;
-        text-align: left;
-        padding: 10px 0;
-        font-weight: 700;
-    }
-    .govuk-table td {
-        border-bottom: 1px solid #b1b4b6;
-        padding: 12px 0;
-    }
-</style>
-""", unsafe_allow_html=True)
+app = create_app()
 
-# 1. Header and Logo
-st.markdown("""
-<div class="govuk-header">
-    <a href="#" class="govuk-header-logo">
-        <svg class="govuk-crown-logo" viewBox="0 0 100 100">
-            <path d="M50 15 L70 35 L60 35 L60 55 L40 55 L40 35 L30 35 Z" />
-        </svg>
-        <span class="govuk-header-logo-text">GOV.UK</span>
-    </a>
-</div>
-<div class="govuk-phase-banner">
-    <span class="govuk-phase-tag">Beta</span>
-    This is a new service – your feedback will help us to improve it.
-</div>
-<a class="govuk-back-link">← Back to services</a>
-""", unsafe_allow_html=True)
 
-# 2. Main heading
-st.markdown('<h1 class="govuk-heading-xl">Forecast stock and asset prices</h1>', unsafe_allow_html=True)
-
-st.markdown("""
-<div class="govuk-inset-text">
-    Use this service to calculate price predictions for publicly traded assets. The engine fits a combined mathematical model using historic daily datasets.
-</div>
-""", unsafe_allow_html=True)
-
-# Form Fields in a structured layout
-st.markdown('<div class="govuk-form-group">', unsafe_allow_html=True)
-st.markdown('<label class="govuk-label">Ticker symbol</label>', unsafe_allow_html=True)
-st.markdown('<span class="govuk-hint">Enter the market identifier (e.g. AAPL for Apple Inc. or BTC-USD for Bitcoin).</span>', unsafe_allow_html=True)
-ticker = st.text_input("", value="AAPL", label_visibility="collapsed").upper().strip()
-st.markdown('</div>', unsafe_allow_html=True)
-
-st.markdown('<div class="govuk-form-group">', unsafe_allow_html=True)
-st.markdown('<label class="govuk-label">Forecasting horizon (Days)</label>', unsafe_allow_html=True)
-st.markdown('<span class="govuk-hint">Select the number of days into the future to project the prices.</span>', unsafe_allow_html=True)
-days_to_predict = st.slider("", min_value=5, max_value=90, value=30, label_visibility="collapsed")
-st.markdown('</div>', unsafe_allow_html=True)
-
-run_clicked = st.button("Calculate forecast")
-
-# Output Section
-if run_clicked or ticker:
-    with st.spinner("Calculating forecast model..."):
-        try:
-            # Data Fetching
-            hist_data = fetch_stock_data(ticker, period="1mo")
-            current_price = hist_data['y'].iloc[-1]
-            
-            # Prediction
-            forecast_df = get_forecast(ticker, days_to_predict=days_to_predict)
-            final_predicted = forecast_df['hybrid_val'].iloc[-1]
-            
-            price_change = final_predicted - current_price
-            pct_change = (price_change / current_price) * 100
-            
-            change_color = "#00703c" if price_change >= 0 else "#d4351c"
-            
-            # Render GDS Metric Grid
-            st.markdown(f"""
-            <div class="gds-metric-row">
-                <div class="gds-metric-cell" style="border-right: 1px solid #b1b4b6;">
-                    <div class="gds-metric-label">Current Price</div>
-                    <div class="gds-metric-value">${current_price:.2f}</div>
-                </div>
-                <div class="gds-metric-cell" style="border-right: 1px solid #b1b4b6;">
-                    <div class="gds-metric-label">Forecast Price ({days_to_predict} Days)</div>
-                    <div class="gds-metric-value">${final_predicted:.2f}</div>
-                </div>
-                <div class="gds-metric-cell">
-                    <div class="gds-metric-label">Projected Trend</div>
-                    <div class="gds-metric-value" style="color: {change_color};">{pct_change:+.2f}%</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # GDS Chart Section
-            st.markdown('<h2 class="govuk-heading-l">Forecast chart</h2>', unsafe_allow_html=True)
-            
-            hist_plot = hist_data.tail(30)[['ds', 'y']].copy()
-            hist_plot.columns = ['ds', 'Actual Price']
-            
-            forecast_plot = forecast_df[['ds', 'hybrid_val', 'prophet_val', 'xgb_val']].copy()
-            forecast_plot.columns = ['ds', 'Hybrid Prediction', 'Prophet Component', 'XGBoost Component']
-            
-            combined_plot = pd.merge(hist_plot, forecast_plot, on='ds', how='outer').set_index('ds')
-            
-            # Chart using high-contrast GDS colors (Black for actuals, GDS Blue for hybrid predictions)
-            st.line_chart(combined_plot, color=["#0b0c0c", "#1d70b8", "#d4351c", "#00703c"])
-            
-            st.markdown("<p style='font-size: 16px; color: #505a5f; margin-top: 10px; margin-bottom: 40px;'>Chart showing actual values (black) and forecasts: hybrid ensemble model (blue), Prophet component (red), and XGBoost component (green).</p>", unsafe_allow_html=True)
-            
-            # GDS Table Section
-            st.markdown('<h2 class="govuk-heading-l">Forecast breakdown</h2>', unsafe_allow_html=True)
-            
-            # Display raw forecast table with GDS typography and no vertical borders
-            display_df = forecast_df.copy()
-            display_df.columns = ['Date', 'Prophet component', 'XGBoost component', 'Hybrid prediction']
-            display_df['Date'] = display_df['Date'].dt.strftime('%Y-%m-%d')
-            
-            # Build GDS HTML Table directly to enforce official look
-            table_rows = []
-            for _, row in display_df.iterrows():
-                table_rows.append(f"""
-                <tr>
-                    <td>{row['Date']}</td>
-                    <td>${row['Prophet component']:.2f}</td>
-                    <td>${row['XGBoost component']:.2f}</td>
-                    <td><strong>${row['Hybrid prediction']:.2f}</strong></td>
-                </tr>
-                """)
-                
-            st.markdown(f"""
-            <table class="govuk-table">
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Prophet Baseline</th>
-                        <th>XGBoost Momentum Offset</th>
-                        <th>Hybrid Forecasted Price</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {"".join(table_rows)}
-                </tbody>
-            </table>
-            """, unsafe_allow_html=True)
-            
-            # GDS warning text at the bottom
-            st.markdown("""
-            <div class="govuk-warning-text">
-                <span class="govuk-warning-icon">!</span>
-                <span class="govuk-warning-text-content">
-                    Warning: Price projections are calculations based on historical values. Past performance is not a guarantee of future outcomes.
-                </span>
-            </div>
-            """, unsafe_allow_html=True)
-
-        except Exception as e:
-            st.markdown(f"""
-            <div class="govuk-warning-text" style="color: #d4351c;">
-                <span class="govuk-warning-icon" style="background-color: #d4351c;">!</span>
-                <span class="govuk-warning-text-content">
-                    Calculation Error: {str(e)}
-                </span>
-            </div>
-            """, unsafe_allow_html=True)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8501, debug=False)
