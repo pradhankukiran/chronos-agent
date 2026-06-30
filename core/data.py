@@ -2,7 +2,7 @@ import pandas as pd
 import yfinance as yf
 import numpy as np
 
-def fetch_stock_data(ticker: str, period: str = "2y") -> pd.DataFrame:
+def fetch_stock_data(ticker: str, period: str = "2y", verify_len: bool = True) -> pd.DataFrame:
     """
     Downloads historical stock/crypto daily data from Yahoo Finance.
     Returns a formatted pandas DataFrame ready for Prophet and XGBoost.
@@ -31,7 +31,7 @@ def fetch_stock_data(ticker: str, period: str = "2y") -> pd.DataFrame:
     df['y'] = df['y'].astype(float)
     
     # Verify we have enough history to calculate indicators (like 20-day SMA)
-    if len(df) < 20:
+    if verify_len and len(df) < 20:
         raise ValueError(
             f"Ticker '{ticker}' has only {len(df)} days of history. "
             f"A minimum of 20 trading days is required to calculate indicators."

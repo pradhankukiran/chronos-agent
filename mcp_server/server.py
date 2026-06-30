@@ -31,7 +31,7 @@ def forecast_asset_price(ticker: str, days_to_predict: int = 30) -> str:
     
     try:
         # Fetch current price for context
-        hist_df = fetch_stock_data(ticker, period="5d")
+        hist_df = fetch_stock_data(ticker, period="5d", verify_len=False)
         current_price = hist_df['y'].iloc[-1]
         
         # Get hybrid forecast (leverages 24h file cache)
