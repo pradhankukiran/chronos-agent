@@ -1,12 +1,30 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <span class="govuk-caption-xl">Financial forecasting</span>
-  <h1 class="govuk-heading-xl">Forecast stock and asset prices</h1>
+  <span class="govuk-caption-xl">
+    {% if active_tab == 'finance' %}Financial forecasting
+    {% elif active_tab == 'weather' %}Weather & Climate forecasting
+    {% else %}Macroeconomic forecasting
+    {% endif %}
+  </span>
+  <h1 class="govuk-heading-xl">
+    {% if active_tab == 'finance' %}Forecast stock and asset prices
+    {% elif active_tab == 'weather' %}Forecast regional daily temperatures
+    {% else %}Forecast national macroeconomic metrics
+    {% endif %}
+  </h1>
 
   <div class="govuk-inset-text">
-    Use this service to calculate price predictions for publicly traded assets.
-    The engine fits a combined mathematical model onto historic daily datasets.
+    {% if active_tab == 'finance' %}
+      Use this service to calculate price predictions for publicly traded assets.
+      The engine fits a combined mathematical model onto historic daily datasets.
+    {% elif active_tab == 'weather' %}
+      Use this service to calculate daily maximum temperature projections for global cities.
+      The engine fits a combined mathematical model onto historical Open-Meteo climate records.
+    {% else %}
+      Use this service to calculate projections for key macroeconomic time series indicators.
+      The engine fits a combined mathematical model onto Federal Reserve Bank (FRED) datasets.
+    {% endif %}
   </div>
 
   {% if has_results %}
@@ -23,7 +41,8 @@
   </details>
   {% endif %}
 
-  <form action="{{ url_for('index') }}" method="get" class="govuk-form" novalidate id="forecast-form">
+  <form action="{{ url_for(active_tab) }}" method="get" class="govuk-form" novalidate id="forecast-form">
+    {% if active_tab == 'finance' %}
     <div class="govuk-form-group">
       <label class="govuk-label govuk-label--l" for="ticker-autocomplete">Ticker symbol</label>
       <div id="ticker-hint" class="govuk-hint">
@@ -32,13 +51,34 @@
       <div id="ticker-autocomplete-container" style="max-width: 25rem;"></div>
       <input type="hidden" id="ticker" name="ticker" value="{{ ticker or '' }}">
     </div>
+    {% elif active_tab == 'weather' %}
+    <div class="govuk-form-group">
+      <label class="govuk-label govuk-label--l" for="city">Global city</label>
+      <div id="city-hint" class="govuk-hint">Select a city for daily temperature projections.</div>
+      <select class="govuk-select" id="city" name="city" style="font-size:19px; max-width: 25rem; border:2px solid #0b0c0c; height:45px; padding: 5px;">
+        {% for c in cities %}
+          <option value="{{ c.id }}" {% if city == c.id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% elif active_tab == 'economics' %}
+    <div class="govuk-form-group">
+      <label class="govuk-label govuk-label--l" for="series_id">Economic indicator</label>
+      <div id="series-hint" class="govuk-hint">Select a macroeconomic time series from FRED.</div>
+      <select class="govuk-select" id="series_id" name="series_id" style="font-size:19px; max-width: 25rem; border:2px solid #0b0c0c; height:45px; padding: 5px;">
+        {% for ind in indicators %}
+          <option value="{{ ind.id }}" {% if series_id == ind.id %}selected{% endif %}>{{ ind.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
 
     <div class="govuk-form-group">
-      <label class="govuk-label govuk-label--l" for="horizon">Forecasting horizon (days)</label>
-      <div id="horizon-hint" class="govuk-hint">Choose how many days into the future to project. The horizon must be between 5 and 90.</div>
+      <label class="govuk-label govuk-label--l" for="horizon">Forecasting horizon (days / periods)</label>
+      <div id="horizon-hint" class="govuk-hint">Choose how many intervals into the future to project. Horizon must be between 5 and 90.</div>
       <select class="govuk-select" id="horizon" name="horizon" aria-describedby="horizon-hint">
         {% for opt in [7, 14, 30, 45, 60, 90] %}
-          <option value="{{ opt }}" {{ 'selected' if opt == horizon else '' }}>{{ opt }} days</option>
+          <option value="{{ opt }}" {{ 'selected' if opt == (horizon|int) else '' }}>{{ opt }} periods</option>
         {% endfor %}
       </select>
     </div>
@@ -50,18 +90,18 @@
 
   <hr class="govuk-section-break govuk-section-break--xl govuk-section-break--visible">
 
-  {% if error %}
+  {% if error_msg %}
     <div class="govuk-error-summary" data-module="govuk-error-summary" aria-labelledby="error-summary-title" role="alert">
       <h2 class="govuk-error-summary__title" id="error-summary-title">There is a problem</h2>
       <div class="govuk-error-summary__body">
-        <p class="govuk-body">{{ error }}</p>
+        <p class="govuk-body">{{ error_msg }}</p>
       </div>
     </div>
     <div class="govuk-warning-text">
       <span class="govuk-warning-text__icon" aria-hidden="true">!</span>
       <strong class="govuk-warning-text__text">
         <span class="govuk-warning-text__assistive">Warning</span>
-        The forecast could not be completed. Please check the ticker symbol and try again.
+        The forecast could not be completed. Please check your query options and try again.
       </strong>
     </div>
   {% endif %}
@@ -72,14 +112,24 @@
     <div class="govuk-grid-row">
       <div class="govuk-grid-column-one-third">
         <div class="govuk-!-margin-bottom-2">
-          <span class="govuk-caption-m">Current price</span>
-          <p class="govuk-heading-l" style="margin-bottom:0">${{ "%.2f"|format(current_price) }}</p>
+          <span class="govuk-caption-m">
+            {% if active_tab == 'finance' %}Current price
+            {% elif active_tab == 'weather' %}Recent max temp
+            {% else %}Recent rate/value
+            {% endif %}
+          </span>
+          <p class="govuk-heading-l" style="margin-bottom:0">{{ unit_prefix }}{{ "%.2f"|format(current_price) }}{{ unit_suffix }}</p>
         </div>
       </div>
       <div class="govuk-grid-column-one-third">
         <div class="govuk-!-margin-bottom-2">
-          <span class="govuk-caption-m">Forecast price in {{ horizon }} days</span>
-          <p class="govuk-heading-l" style="margin-bottom:0">${{ "%.2f"|format(final_predicted) }}</p>
+          <span class="govuk-caption-m">
+            {% if active_tab == 'finance' %}Forecast price in {{ horizon }} days
+            {% elif active_tab == 'weather' %}Forecast temp in {{ horizon }} days
+            {% else %}Forecast value in {{ horizon }} periods
+            {% endif %}
+          </span>
+          <p class="govuk-heading-l" style="margin-bottom:0">{{ unit_prefix }}{{ "%.2f"|format(final_predicted) }}{{ unit_suffix }}</p>
         </div>
       </div>
       <div class="govuk-grid-column-one-third">
@@ -93,6 +143,7 @@
     </div>
 
     {# Market Essentials Table #}
+    {% if active_tab == 'finance' %}
     <h3 class="govuk-heading-m" style="margin-top: 30px;">Market Valuation Essentials</h3>
     <table class="govuk-table" style="margin-bottom: 40px;">
       <tbody class="govuk-table__body">
@@ -115,14 +166,15 @@
         {% if company_info.low_52 and company_info.high_52 %}
         <tr class="govuk-table__row">
           <th scope="row" class="govuk-table__header">52-Week Range</th>
-          <td class="govuk-table__cell">${{ "%.2f"|format(company_info.low_52) }} - ${{ "%.2f"|format(company_info.high_52) }}</td>
+          <td class="govuk-table__cell">{{ unit_prefix }}{{ "%.2f"|format(company_info.low_52) }}{{ unit_suffix }} - {{ unit_prefix }}{{ "%.2f"|format(company_info.high_52) }}{{ unit_suffix }}</td>
         </tr>
         {% endif %}
       </tbody>
     </table>
+    {% endif %}
 
     {# Chart #}
-    <h2 class="govuk-heading-l">Forecast chart</h2>
+    <h2 class="govuk-heading-l" style="margin-top: 30px;">Forecast chart</h2>
     <p class="govuk-body-s" style="color:#505a5f; margin-top:-10px;">
       Chart showing actual values (black) and forecasts: hybrid ensemble model (blue) with shaded uncertainty intervals,
       Prophet component (red) and XGBoost component (green).
@@ -145,7 +197,7 @@
             </tr>
             <tr class="govuk-table__row">
               <th scope="row" class="govuk-table__header">Backtest Error (MAE)</th>
-              <td class="govuk-table__cell">${{ "%.2f"|format(diagnostics.backtest_mae) }}</td>
+              <td class="govuk-table__cell">{{ unit_prefix }}{{ "%.2f"|format(diagnostics.backtest_mae) }}{{ unit_suffix }}</td>
             </tr>
             <tr class="govuk-table__row">
               <th scope="row" class="govuk-table__header">Durbin-Watson Stat</th>
@@ -153,7 +205,7 @@
             </tr>
             <tr class="govuk-table__row">
               <th scope="row" class="govuk-table__header">Residual Standard Dev</th>
-              <td class="govuk-table__cell">${{ "%.2f"|format(diagnostics.residual_std) }}</td>
+              <td class="govuk-table__cell">{{ unit_prefix }}{{ "%.2f"|format(diagnostics.residual_std) }}{{ unit_suffix }}</td>
             </tr>
           </tbody>
         </table>
@@ -190,7 +242,7 @@
     {# XGBoost Details #}
     <h3 class="govuk-heading-m">XGBoost Machine Learning Component</h3>
     <p class="govuk-body">
-      The XGBoost component corrected the Prophet baseline trend line by an average of <strong>${{ "%.2f"|format(diagnostics.avg_offset) }}</strong> per day to capture short-term price momentum.
+      The XGBoost component corrected the Prophet baseline trend line by an average of <strong>{{ unit_prefix }}{{ "%.2f"|format(diagnostics.avg_offset) }}{{ unit_suffix }}</strong> per day to capture short-term pattern residuals.
     </p>
     
     <h4 class="govuk-heading-s">Feature Importance Rating</h4>
@@ -208,11 +260,11 @@
         <tr class="govuk-table__row">
           <td class="govuk-table__cell"><code>{{ feat }}</code></td>
           <td class="govuk-table__cell">
-            {% if feat == 'sma_5' %}5-day Simple Moving Average
-            {% elif feat == 'sma_20' %}20-day Simple Moving Average
-            {% elif feat == 'returns' %}Day-over-day Percentage Return
-            {% elif feat == 'lag_1' %}Close Price from the Previous Day
-            {% elif feat == 'lag_7' %}Close Price from One Week Ago
+            {% if feat == 'sma_5' %}5-interval Simple Moving Average
+            {% elif feat == 'sma_20' %}20-interval Simple Moving Average
+            {% elif feat == 'returns' %}Interval-over-interval Percentage Return
+            {% elif feat == 'lag_1' %}Value from the Previous Interval
+            {% elif feat == 'lag_7' %}Value from Seven Intervals Ago
             {% elif feat == 'prophet_trend' %}Prophet Long-term Bayesian Trend Line
             {% else %}Engineered feature
             {% endif %}
@@ -255,11 +307,11 @@
     <h2 class="govuk-heading-l" id="forecast-breakdown">Forecast breakdown</h2>
     <table class="govuk-table">
       <caption class="govuk-table__caption govuk-table__caption--m">
-        Daily hybrid forecast for {{ ticker }} over the next {{ horizon }} days
+        Daily hybrid forecast over the next {{ horizon }} intervals
       </caption>
       <thead class="govuk-table__head">
         <tr class="govuk-table__row">
-          <th scope="col" class="govuk-table__header">Date</th>
+          <th scope="col" class="govuk-table__header">Date / Interval</th>
           <th scope="col" class="govuk-table__header govuk-table__header--numeric">Prophet baseline (trend)</th>
           <th scope="col" class="govuk-table__header govuk-table__header--numeric">XGBoost momentum</th>
           <th scope="col" class="govuk-table__header govuk-table__header--numeric">Hybrid forecast</th>
@@ -269,9 +321,9 @@
         {% for row in forecast_rows %}
         <tr class="govuk-table__row">
           <td class="govuk-table__cell">{{ row.date }}</td>
-          <td class="govuk-table__cell govuk-table__cell--numeric">${{ "%.2f"|format(row.prophet) }}</td>
-          <td class="govuk-table__cell govuk-table__cell--numeric">${{ "%.2f"|format(row.xgb) }}</td>
-          <td class="govuk-table__cell govuk-table__cell--numeric govuk-!-font-weight-bold">${{ "%.2f"|format(row.hybrid) }}</td>
+          <td class="govuk-table__cell govuk-table__cell--numeric">{{ unit_prefix }}{{ "%.2f"|format(row.prophet) }}{{ unit_suffix }}</td>
+          <td class="govuk-table__cell govuk-table__cell--numeric">{{ unit_prefix }}{{ "%.2f"|format(row.xgb) }}{{ unit_suffix }}</td>
+          <td class="govuk-table__cell govuk-table__cell--numeric govuk-!-font-weight-bold">{{ unit_prefix }}{{ "%.2f"|format(row.hybrid) }}{{ unit_suffix }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -281,11 +333,12 @@
       <span class="govuk-warning-text__icon" aria-hidden="true">!</span>
       <strong class="govuk-warning-text__text">
         <span class="govuk-warning-text__assistive">Warning</span>
-        Price projections are calculations based on historical values. Past performance is not a guarantee of future outcomes.
+        Mathematical model projections are calculations based on historical values. Past behavior is not a guarantee of future outcomes.
       </strong>
     </div>
   {% endif %}
 
+  {% if active_tab == 'finance' %}
   <script>
     document.addEventListener("DOMContentLoaded", function () {
       var container = document.querySelector('#ticker-autocomplete-container');
@@ -295,46 +348,53 @@
       accessibleAutocomplete({
         element: container,
         id: 'ticker-autocomplete',
-        name: 'ticker_search_raw',
-        defaultValue: '{{ ticker or "" }}',
-        placeholder: 'Search for a company or ticker...',
-        displayMenu: 'overlay',
-        minLength: 1,
-        source: function (query, populateResults) {
+        source: function(query, populateResults) {
           fetch('/api/search?q=' + encodeURIComponent(query))
-            .then(function (response) { return response.json(); })
-            .then(function (data) {
-              var suggestions = data.map(function (item) {
-                return item.symbol + ' - ' + item.name + ' (' + item.exch + ')';
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              var formatted = data.map(function(item) {
+                return item.ticker + ' - ' + item.name + ' (' + item.exchange + ')';
               });
-              populateResults(suggestions);
+              populateResults(formatted);
             });
         },
-        onConfirm: function (val) {
+        minLength: 1,
+        placeholder: 'Search for a ticker (e.g. AAPL or BTC-USD)...',
+        onConfirm: function(val) {
           if (val) {
-            var symbol = val.split(' ')[0].toUpperCase();
-            hiddenInput.value = symbol;
+            var parts = val.split(' ');
+            var ticker = parts[0];
+            hiddenInput.value = ticker;
           } else {
             hiddenInput.value = '';
           }
-        }
+        },
+        defaultValue: '{{ ticker or "" }}'
       });
 
-      // Handle raw submissions (e.g. typing manually and pressing Enter)
+      // Submit only ticker on form submit
       var form = document.getElementById('forecast-form');
       form.addEventListener('submit', function (e) {
         var visibleInput = document.getElementById('ticker-autocomplete');
-        if (visibleInput && visibleInput.value) {
-          var symbol = visibleInput.value.split(' ')[0].toUpperCase().trim();
-          hiddenInput.value = symbol;
+        if (visibleInput && visibleInput.value.trim() !== '') {
+          var val = visibleInput.value.trim();
+          var parts = val.split(' ');
+          hiddenInput.value = parts[0];
         }
       });
+    });
+  </script>
+  {% endif %}
 
-      // Smooth scroll to results if present on load
-      var resultsSection = document.getElementById('forecast-results');
-      if (resultsSection) {
-        resultsSection.scrollIntoView({ behavior: 'smooth' });
-      }
+  <script>
+    // GDS Auto-Scroll to Results panel after submit loading completes
+    document.addEventListener("DOMContentLoaded", function () {
+      {% if has_results or error_msg %}
+        var resultsHeader = document.getElementById('forecast-results') || document.getElementById('error-summary-title');
+        if (resultsHeader) {
+          resultsHeader.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      {% endif %}
     });
   </script>
 {% endblock %}

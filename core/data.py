@@ -69,7 +69,8 @@ def fetch_company_info(ticker: str) -> dict:
             "employees": f"{info.get('fullTimeEmployees', 0):,}" if info.get("fullTimeEmployees") else "N/A",
             "market_cap": cap_str,
             "pe_ratio": f"{info.get('trailingPE'):.2f}" if info.get("trailingPE") else "N/A",
-            "beta": f"{info.get('beta'):.2f}" if info.get("beta") else "N/A",
+            "pe_ratio": f"{info.get('trailingPE'):.2f}" if info.get('trailingPE') else "N/A",
+            "beta": f"{info.get('beta'):.2f}" if info.get('beta') else "N/A",
             "recommendation": info.get("recommendationKey", "N/A").replace("_", " ").title(),
             "high_52": info.get("fiftyTwoWeekHigh"),
             "low_52": info.get("fiftyTwoWeekLow")
@@ -112,3 +113,83 @@ def add_technical_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna().reset_index(drop=True)
     
     return df
+
+# Setup Open-Meteo Client for weather
+import openmeteo_requests
+import requests_cache
+from retry_requests import retry
+
+# Cache session to keep weather fetches fast
+cache_session = requests_cache.CachedSession('.cache', expire_after=3600)
+retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
+openmeteo = openmeteo_requests.Client(session=retry_session)
+
+def fetch_weather_data(lat: float, lon: float) -> pd.DataFrame:
+    """
+    Downloads historical maximum daily temperature from Open-Meteo Archive API
+    for the last 2 years. Returns a formatted DataFrame.
+    """
+    url = "https://archive-api.open-meteo.com/v1/archive"
+    
+    # Use offset to ensure data is available in the historical archive database
+    end_date = (pd.Timestamp.now() - pd.DateOffset(days=5)).strftime('%Y-%m-%d')
+    start_date = (pd.Timestamp.now() - pd.DateOffset(years=2)).strftime('%Y-%m-%d')
+    
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "start_date": start_date,
+        "end_date": end_date,
+        "daily": "temperature_2m_max",
+        "timezone": "auto"
+    }
+    
+    try:
+        responses = openmeteo.weather_api(url, params=params)
+        response = responses[0]
+        
+        daily = response.Daily()
+        temp_max = daily.Variables(0).ValuesAsNumpy()
+        
+        # Build date range
+        dates = pd.date_range(
+            start=pd.to_datetime(daily.Time(), unit="s", utc=True),
+            end=pd.to_datetime(daily.TimeEnd(), unit="s", utc=True),
+            freq=pd.Timedelta(seconds=daily.Interval()),
+            inclusive="left"
+        )
+        
+        df = pd.DataFrame({"ds": dates, "y": temp_max})
+        df['ds'] = df['ds'].dt.tz_localize(None)
+        df['y'] = df['y'].astype(float)
+        
+        df = df.dropna().reset_index(drop=True)
+        
+        if len(df) < 20:
+            raise ValueError("Insufficient history returned from Weather API.")
+        return df
+        
+    except Exception as e:
+        raise ValueError(f"Weather API download failed: {str(e)}")
+
+import pandas_datareader.data as web
+
+def fetch_economic_data(series_id: str) -> pd.DataFrame:
+    """
+    Downloads historical macroeconomic indicator data from Federal Reserve Economic Data (FRED).
+    """
+    start = pd.Timestamp.now() - pd.DateOffset(years=10)
+    end = pd.Timestamp.now()
+    
+    try:
+        df = web.DataReader(series_id, 'fred', start, end)
+        df = df.reset_index()
+        df.columns = ['ds', 'y']
+        df['y'] = df['y'].astype(float)
+        df = df.dropna().reset_index(drop=True)
+        
+        if len(df) < 20:
+            raise ValueError("Insufficient history returned from Economic API.")
+        return df
+    except Exception as e:
+        raise ValueError(f"Economic API download (FRED) failed: {str(e)}")

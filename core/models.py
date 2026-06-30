@@ -9,15 +9,14 @@ from core.cache import is_model_cached, save_model, load_model
 
 FEATURE_COLS = ['sma_5', 'sma_20', 'returns', 'lag_1', 'lag_7', 'prophet_trend']
 
-def train_hybrid_model(ticker: str) -> dict:
+def train_generic_hybrid_model(raw_df: pd.DataFrame, name: str) -> dict:
     """
-    Downloads historical data, trains Prophet and XGBoost,
-    calculates diagnostic statistics, and caches the model dictionary.
+    Trains a Prophet + XGBoost hybrid ensemble model on a generic DataFrame (ds, y),
+    calculates diagnostics, and caches the model data.
     """
-    # 1. Fetch raw data (last 2 years of daily close prices)
-    raw_df = fetch_stock_data(ticker, period="2y")
+    name = name.upper().strip()
     
-    # 2. Fit Prophet model on history
+    # 1. Fit Prophet model on history
     prophet_model = Prophet(yearly_seasonality=True, weekly_seasonality=True, daily_seasonality=False)
     import logging
     logging.getLogger('cmdstanpy').setLevel(logging.ERROR)
@@ -26,7 +25,7 @@ def train_hybrid_model(ticker: str) -> dict:
     # Extract Prophet forecasts for historical data
     prophet_forecast = prophet_model.predict(raw_df)
     
-    # 3. Prepare data for XGBoost (add technical indicators and Prophet trend)
+    # 2. Prepare data for XGBoost (add technical indicators and Prophet trend)
     df_with_features = add_technical_features(raw_df)
     
     # Merge datasets
@@ -45,7 +44,6 @@ def train_hybrid_model(ticker: str) -> dict:
     
     # Combine Prophet and XGBoost validation predictions
     val_preds_xgb = val_xgb.predict(X_test_val)
-    # Align Prophet validation values
     val_preds_prophet = df_merged.loc[y_test_val.index, 'prophet_yhat'].values
     val_hybrid_preds = (val_preds_prophet + val_preds_xgb) / 2
     
@@ -54,11 +52,11 @@ def train_hybrid_model(ticker: str) -> dict:
     backtest_mae = mean_absolute_error(y_test_val, val_hybrid_preds)
     accuracy_rating = max(0.0, min(100.0, backtest_r2 * 100)) # Represented as %
     
-    # 4. Fit Full XGBoost Regressor on all data
+    # 3. Fit Full XGBoost Regressor on all data
     xgb_model = XGBRegressor(n_estimators=100, learning_rate=0.05, max_depth=5, random_state=42)
     xgb_model.fit(X, y)
     
-    # 5. Calculate Diagnostics & Insights
+    # 4. Calculate Diagnostics & Insights
     # Feature Importance
     importances = xgb_model.feature_importances_
     feature_importance = {feat: float(imp) for feat, imp in zip(FEATURE_COLS, importances)}
@@ -67,7 +65,7 @@ def train_hybrid_model(ticker: str) -> dict:
     full_preds = (df_merged['prophet_yhat'].values + xgb_model.predict(X)) / 2
     residuals = y.values - full_preds
     diff_res = np.diff(residuals)
-    dw_stat = float(np.sum(diff_res**2) / np.sum(residuals**2))
+    dw_stat = float(np.sum(diff_res**2) / np.sum(residuals**2)) if np.sum(residuals**2) > 0 else 2.0
     residual_std = float(np.std(residuals))
     avg_offset = float(np.mean(np.abs(xgb_model.predict(X) - df_merged['prophet_yhat'].values)))
     
@@ -96,9 +94,9 @@ def train_hybrid_model(ticker: str) -> dict:
     best_month = months_list[np.argmax(yearly_res['yearly'].values)]
     worst_month = months_list[np.argmin(yearly_res['yearly'].values)]
     
-    # 6. Bundle models and diagnostic metadata
+    # Bundle models and diagnostic metadata
     model_data = {
-        "ticker": ticker,
+        "ticker": name,
         "prophet_model": prophet_model,
         "xgb_model": xgb_model,
         "historical_df": df_merged[['ds', 'y']],
@@ -118,21 +116,22 @@ def train_hybrid_model(ticker: str) -> dict:
         }
     }
     
-    save_model(ticker, model_data)
+    save_model(name, model_data)
     return model_data
 
-def get_forecast(ticker: str, days_to_predict: int = 30) -> pd.DataFrame:
+def get_generic_forecast(name: str, days_to_predict: int, df_fetch_func) -> pd.DataFrame:
     """
-    Loads the cached hybrid model (or trains it if missing/expired)
-    and predicts the price for future dates using a step-by-step loop.
+    Loads the cached hybrid model (or downloads data and trains if missing/expired)
+    and predicts the price for future dates using an autoregressive loop.
     """
-    ticker = ticker.upper().strip()
+    name = name.upper().strip()
     
     # Load model (train if not cached)
-    if not is_model_cached(ticker):
-        model_data = train_hybrid_model(ticker)
+    if not is_model_cached(name):
+        raw_df = df_fetch_func()
+        model_data = train_generic_hybrid_model(raw_df, name)
     else:
-        model_data = load_model(ticker)
+        model_data = load_model(name)
         
     prophet_model = model_data["prophet_model"]
     xgb_model = model_data["xgb_model"]
@@ -158,7 +157,7 @@ def get_forecast(ticker: str, days_to_predict: int = 30) -> pd.DataFrame:
     
     future_predictions = []
     
-    # 2. Autoregressive prediction loop (predict Day 1, use that to predict Day 2, etc.)
+    # 2. Autoregressive prediction loop
     for idx, row in future_rows.iterrows():
         current_date = row['ds']
         prophet_trend = row['prophet_trend']
@@ -207,3 +206,9 @@ def get_forecast(ticker: str, days_to_predict: int = 30) -> pd.DataFrame:
         })
         
     return pd.DataFrame(future_predictions)
+
+def get_forecast(ticker: str, days_to_predict: int = 30) -> pd.DataFrame:
+    """
+    Finance specific wrapper. Backward compatible.
+    """
+    return get_generic_forecast(ticker, days_to_predict, lambda: fetch_stock_data(ticker))

@@ -96,10 +96,23 @@
     {% endblock %}
 
     <div class="govuk-header" style="background-color: #0b0c0c; border-bottom: 10px solid #1d70b8; padding: 15px 0;">
-      <div class="govuk-width-container">
-        <span class="govuk-header__link govuk-header__link--service-name" style="font-size: 24px; font-weight: bold; color: #ffffff; text-decoration: none;">
+      <div class="govuk-width-container" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+        <span class="govuk-header__link govuk-header__link--service-name" style="font-size: 24px; font-weight: bold; color: #ffffff; text-decoration: none; margin-right: 15px;">
           Chronos Forecasting Service
         </span>
+        <nav class="govuk-header__navigation" aria-label="Menu" style="border: none; margin: 0; padding: 0;">
+          <ul class="govuk-header__navigation-list" style="margin: 0; padding: 0; list-style: none; display: flex; gap: 20px;">
+            <li class="govuk-header__navigation-item{% if active_tab == 'finance' %} govuk-header__navigation-item--active{% endif %}" style="padding: 5px 0;">
+              <a class="govuk-header__link" href="{{ url_for('finance') }}" style="color: #ffffff; text-decoration: {% if active_tab == 'finance' %}underline{% else %}none{% endif %}; font-weight: bold; font-size: 16px;">Finance</a>
+            </li>
+            <li class="govuk-header__navigation-item{% if active_tab == 'weather' %} govuk-header__navigation-item--active{% endif %}" style="padding: 5px 0;">
+              <a class="govuk-header__link" href="{{ url_for('weather') }}" style="color: #ffffff; text-decoration: {% if active_tab == 'weather' %}underline{% else %}none{% endif %}; font-weight: bold; font-size: 16px;">Weather</a>
+            </li>
+            <li class="govuk-header__navigation-item{% if active_tab == 'economics' %} govuk-header__navigation-item--active{% endif %}" style="padding: 5px 0;">
+              <a class="govuk-header__link" href="{{ url_for('economics') }}" style="color: #ffffff; text-decoration: {% if active_tab == 'economics' %}underline{% else %}none{% endif %}; font-weight: bold; font-size: 16px;">Economics</a>
+            </li>
+          </ul>
+        </nav>
       </div>
     </div>
 
