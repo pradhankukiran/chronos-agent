@@ -421,13 +421,24 @@
             latInput.value = selected.lat;
             lonInput.value = selected.lon;
             nameInput.value = selected.label;
-          } else {
-            latInput.value = '';
-            lonInput.value = '';
-            nameInput.value = '';
           }
         },
         defaultValue: '{{ city_name or "" }}'
+      });
+
+      // Submit listener to extract coordinates via Regex right before submission
+      var form = document.getElementById('forecast-form');
+      form.addEventListener('submit', function (e) {
+        var visibleInput = document.getElementById('weather-autocomplete');
+        if (visibleInput && visibleInput.value.trim() !== '') {
+          var val = visibleInput.value.trim();
+          var match = val.match(/\(([^,]+),\s*([^)]+)\)/);
+          if (match) {
+            latInput.value = match[1].trim();
+            lonInput.value = match[2].trim();
+            nameInput.value = val.substring(0, val.indexOf(' (')).trim();
+          }
+        }
       });
     });
   </script>
