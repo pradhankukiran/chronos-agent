@@ -283,7 +283,7 @@ def _build_finance_forecast(ticker: str, horizon: int) -> dict:
     price_change = final_predicted - current_price
     pct_change = (price_change / current_price) * 100.0 if current_price else 0.0
 
-    chart_html = _render_chart(hist, forecast_df, horizon, y_title="Price (USD)", tick_prefix="$", tick_suffix="")
+    chart_html = _render_chart(hist, forecast_df, horizon, y_title="Price (USD)", tick_prefix="$", tick_suffix="", diagnostics=diagnostics)
 
     rows = [
         {
@@ -334,7 +334,7 @@ def _build_weather_forecast(lat: float, lon: float, city_name: str, horizon: int
     pct_change = (price_change / current_price) * 100.0 if current_price else 0.0
 
     # Render with custom labels
-    chart_html = _render_chart(hist.tail(60), forecast_df, horizon, y_title="Max Temperature (°C)", tick_prefix="", tick_suffix="°C")
+    chart_html = _render_chart(hist, forecast_df, horizon, y_title="Max Temperature (°C)", tick_prefix="", tick_suffix="°C", diagnostics=diagnostics)
 
     rows = [
         {
@@ -410,7 +410,7 @@ def _build_economics_forecast(series_id: str, horizon: int) -> dict:
     pct_change = (price_change / current_price) * 100.0 if current_price else 0.0
 
     # Render with custom economic labels
-    chart_html = _render_chart(hist.tail(40), forecast_df, horizon, y_title=f"Value ({unit_suffix or 'units'})", tick_prefix=unit_prefix, tick_suffix=unit_suffix)
+    chart_html = _render_chart(hist, forecast_df, horizon, y_title=f"Value ({unit_suffix or 'units'})", tick_prefix=unit_prefix, tick_suffix=unit_suffix, diagnostics=diagnostics)
 
     rows = [
         {
@@ -450,10 +450,17 @@ def _build_economics_forecast(series_id: str, horizon: int) -> dict:
     }
 
 
-def _render_chart(hist: pd.DataFrame, forecast: pd.DataFrame, horizon: int, y_title: str = "Price (USD)", tick_prefix: str = "$", tick_suffix: str = "") -> str:
+def _render_chart(hist: pd.DataFrame, forecast: pd.DataFrame, horizon: int, y_title: str = "Price (USD)", tick_prefix: str = "$", tick_suffix: str = "", diagnostics: dict = None) -> str:
     """Build a Plotly line chart and return its embeddable HTML."""
     fig = go.Figure()
 
+    # 1. Add Custom Hover Templates for standard traces
+    hist_hover = "<b>Date:</b> %{x|%Y-%m-%d}<br><b>Actual:</b> " + tick_prefix + "%{y:.2f}" + tick_suffix + "<extra></extra>"
+    hybrid_hover = "<b>Date:</b> %{x|%Y-%m-%d}<br><b>Hybrid Forecast:</b> " + tick_prefix + "%{y:.2f}" + tick_suffix + "<extra></extra>"
+    prophet_hover = "<b>Date:</b> %{x|%Y-%m-%d}<br><b>Prophet Baseline:</b> " + tick_prefix + "%{y:.2f}" + tick_suffix + "<extra></extra>"
+    xgb_hover = "<b>Date:</b> %{x|%Y-%m-%d}<br><b>XGBoost Residual:</b> " + tick_prefix + "%{y:.2f}" + tick_suffix + "<extra></extra>"
+
+    # 2. Plotly Traces
     fig.add_trace(
         go.Scatter(
             x=hist["ds"],
@@ -461,6 +468,7 @@ def _render_chart(hist: pd.DataFrame, forecast: pd.DataFrame, horizon: int, y_ti
             mode="lines",
             name="Actual history",
             line={"color": "#0b0c0c", "width": 2},
+            hovertemplate=hist_hover
         )
     )
     
@@ -482,7 +490,7 @@ def _render_chart(hist: pd.DataFrame, forecast: pd.DataFrame, horizon: int, y_ti
             mode="lines",
             line=dict(width=0),
             fill='tonexty',
-            fillcolor='rgba(29, 112, 184, 0.15)', # GDS Blue with 15% opacity
+            fillcolor='rgba(29, 112, 184, 0.12)', # GDS Blue with 12% opacity
             name="Uncertainty interval",
             hoverinfo="skip"
         )
@@ -495,6 +503,7 @@ def _render_chart(hist: pd.DataFrame, forecast: pd.DataFrame, horizon: int, y_ti
             mode="lines",
             name="Hybrid forecast",
             line={"color": "#1d70b8", "width": 2.5},
+            hovertemplate=hybrid_hover
         )
     )
     fig.add_trace(
@@ -504,6 +513,7 @@ def _render_chart(hist: pd.DataFrame, forecast: pd.DataFrame, horizon: int, y_ti
             mode="lines",
             name="Prophet component",
             line={"color": "#d4351c", "dash": "dot"},
+            hovertemplate=prophet_hover
         )
     )
     fig.add_trace(
@@ -513,19 +523,111 @@ def _render_chart(hist: pd.DataFrame, forecast: pd.DataFrame, horizon: int, y_ti
             mode="lines",
             name="XGBoost component",
             line={"color": "#00703c", "dash": "dot"},
+            hovertemplate=xgb_hover
         )
     )
 
+    # 3. Add Vertical Forecast Divider Shape
+    forecast_start = forecast["ds"].iloc[0]
+    forecast_end = forecast["ds"].iloc[-1]
+    
+    # Draw Divider line
+    fig.add_vline(
+        x=forecast_start,
+        line_width=1.5,
+        line_dash="dash",
+        line_color="#505a5f",
+        opacity=0.8
+    )
+    
+    # Shade Forecast region
+    fig.add_vrect(
+        x0=forecast_start,
+        x1=forecast_end,
+        fillcolor="#0b0c0c",
+        opacity=0.04, # extremely light GDS gray overlay
+        layer="below",
+        line_width=0
+    )
+
+    # 4. Add Prophet Changepoint indicators
+    if diagnostics and "changepoints" in diagnostics:
+        for cp in diagnostics["changepoints"]:
+            cp_date = pd.to_datetime(cp["date"])
+            # Ensure the changepoint lies within the historical range we are plotting
+            if cp_date in hist["ds"].values:
+                fig.add_vline(
+                    x=cp_date,
+                    line_width=1,
+                    line_dash="dot",
+                    line_color="#a1a1a1",
+                    opacity=0.6
+                )
+
+    # 5. Add Horizontal Benchmark lines (Average, Max, Min of historical data)
+    hist_avg = hist["y"].mean()
+    hist_max = hist["y"].max()
+    hist_min = hist["y"].min()
+    
+    fig.add_hline(
+        y=hist_avg,
+        line_width=1,
+        line_dash="dash",
+        line_color="#28a197", # GDS turquoise
+        opacity=0.7,
+        annotation_text="Avg",
+        annotation_position="bottom left"
+    )
+    fig.add_hline(
+        y=hist_max,
+        line_width=1,
+        line_dash="dash",
+        line_color="#b1b4b6",
+        opacity=0.5,
+        annotation_text="Max",
+        annotation_position="top left"
+    )
+    fig.add_hline(
+        y=hist_min,
+        line_width=1,
+        line_dash="dash",
+        line_color="#b1b4b6",
+        opacity=0.5,
+        annotation_text="Min",
+        annotation_position="bottom left"
+    )
+
+    # 6. Configure Range Zoom & Slider
+    # Zoom pre-set to last 60 periods to avoid crowded starts
+    default_zoom_periods = 60 if len(hist) > 60 else len(hist)
+    default_start = hist["ds"].iloc[-default_zoom_periods]
+    
     fig.update_layout(
         template="plotly_white",
-        margin={"l": 20, "r": 20, "t": 20, "b": 20},
-        height=420,
+        margin={"l": 20, "r": 20, "t": 40, "b": 20},
+        height=520, # Increased height to accommodate the range slider comfortably
         legend={
             "orientation": "h",
-            "y": -0.2,
+            "y": -0.35,
             "x": 0,
         },
-        xaxis={"title": None},
+        xaxis=dict(
+            title=None,
+            type="date",
+            range=[default_start, forecast_end],
+            rangeselector=dict(
+                buttons=list([
+                    dict(count=7, label="7d", step="day", stepmode="backward"),
+                    dict(count=14, label="14d", step="day", stepmode="backward"),
+                    dict(count=1, label="1m", step="month", stepmode="backward"),
+                    dict(count=3, label="3m", step="month", stepmode="backward"),
+                    dict(count=1, label="1y", step="year", stepmode="backward"),
+                    dict(step="all", label="All")
+                ]),
+                font=dict(size=12, family="Arial")
+            ),
+            rangeslider=dict(visible=True)
+        ),
         yaxis={"title": y_title, "tickprefix": tick_prefix, "ticksuffix": tick_suffix},
     )
 
