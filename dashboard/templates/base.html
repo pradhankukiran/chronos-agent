@@ -10,6 +10,55 @@
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='assets/images/favicon.svg') }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='govuk/govuk-frontend.min.css') }}" />
     <link rel="stylesheet" href="https://unpkg.com/accessible-autocomplete@3.0.1/dist/accessible-autocomplete.min.css" />
+    
+    <style>
+      /* GOV.UK Autocomplete Custom Styling Overrides */
+      .autocomplete__wrapper {
+        position: relative;
+      }
+      .autocomplete__input {
+        font-family: Arial, sans-serif !important;
+        font-size: 19px !important;
+        color: #0b0c0c !important;
+        border: 2px solid #0b0c0c !important;
+        border-radius: 0px !important; /* GDS sharp corners */
+        padding: 8px 12px !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        height: auto !important;
+      }
+      .autocomplete__input:focus {
+        outline: 3px solid #ffdd00 !important; /* GDS Focus Yellow */
+        outline-offset: 0px !important;
+        border-color: #0b0c0c !important;
+      }
+      .autocomplete__menu {
+        font-family: Arial, sans-serif !important;
+        font-size: 19px !important;
+        border: 2px solid #0b0c0c !important;
+        border-top: none !important;
+        border-radius: 0px !important;
+        background-color: #ffffff !important;
+        box-shadow: none !important; /* Remove generic shadows */
+        margin-top: 0px !important;
+        padding: 0 !important;
+      }
+      .autocomplete__option {
+        color: #0b0c0c !important;
+        padding: 10px 14px !important;
+        border-bottom: 1px solid #b1b4b6 !important;
+        cursor: pointer !important;
+      }
+      .autocomplete__option:last-child {
+        border-bottom: none !important;
+      }
+      /* GDS Blue active state highlight */
+      .autocomplete__option--focused,
+      .autocomplete__option:hover {
+        background-color: #1d70b8 !important;
+        color: #ffffff !important;
+      }
+    </style>
   </head>
   <body class="govuk-template__body govuk-js-supported">
     <a href="#main-content" class="govuk-skip-link" data-module="govuk-skip-link">Skip to main content</a>
