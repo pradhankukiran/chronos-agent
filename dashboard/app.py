@@ -229,7 +229,7 @@ def create_app() -> Flask:
                     "lat": lat,
                     "lon": lon
                 })
-            return jsonify(results[:10])
+            return jsonify(out)
         except Exception:
             return jsonify([])
 
