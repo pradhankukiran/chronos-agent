@@ -53,13 +53,14 @@
     </div>
     {% elif active_tab == 'weather' %}
     <div class="govuk-form-group">
-      <label class="govuk-label govuk-label--l" for="city">Global city</label>
-      <div id="city-hint" class="govuk-hint">Select a city for daily temperature projections.</div>
-      <select class="govuk-select" id="city" name="city" style="font-size:19px; max-width: 25rem; border:2px solid #0b0c0c; height:45px; padding: 5px;">
-        {% for c in cities %}
-          <option value="{{ c.id }}" {% if city == c.id %}selected{% endif %}>{{ c.name }}</option>
-        {% endfor %}
-      </select>
+      <label class="govuk-label govuk-label--l" for="weather-autocomplete">Search for a location</label>
+      <div id="weather-hint" class="govuk-hint">
+        Enter any city name or region in the world (e.g. Paris, Tokyo, or California).
+      </div>
+      <div id="weather-autocomplete-container" style="max-width: 25rem;"></div>
+      <input type="hidden" id="lat" name="lat" value="{{ lat or '' }}">
+      <input type="hidden" id="lon" name="lon" value="{{ lon or '' }}">
+      <input type="hidden" id="city_name" name="city_name" value="{{ city_name or '' }}">
     </div>
     {% elif active_tab == 'economics' %}
     <div class="govuk-form-group">
@@ -381,6 +382,52 @@
           var parts = val.split(' ');
           hiddenInput.value = parts[0];
         }
+      });
+    });
+  </script>
+  {% endif %}
+
+  {% if active_tab == 'weather' %}
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      var container = document.querySelector('#weather-autocomplete-container');
+      var latInput = document.getElementById('lat');
+      var lonInput = document.getElementById('lon');
+      var nameInput = document.getElementById('city_name');
+      
+      var optionsMap = {};
+
+      accessibleAutocomplete({
+        element: container,
+        id: 'weather-autocomplete',
+        source: function(query, populateResults) {
+          fetch('/api/weather/search?q=' + encodeURIComponent(query))
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              optionsMap = {};
+              var formatted = data.map(function(item) {
+                var label = item.label + ' (' + item.lat.toFixed(4) + ', ' + item.lon.toFixed(4) + ')';
+                optionsMap[label] = item;
+                return label;
+              });
+              populateResults(formatted);
+            });
+        },
+        minLength: 2,
+        placeholder: 'Search for a city...',
+        onConfirm: function(val) {
+          if (val && optionsMap[val]) {
+            var selected = optionsMap[val];
+            latInput.value = selected.lat;
+            lonInput.value = selected.lon;
+            nameInput.value = selected.label;
+          } else {
+            latInput.value = '';
+            lonInput.value = '';
+            nameInput.value = '';
+          }
+        },
+        defaultValue: '{{ city_name or "" }}'
       });
     });
   </script>

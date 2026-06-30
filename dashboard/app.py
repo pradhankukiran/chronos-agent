@@ -73,8 +73,9 @@ def create_app() -> Flask:
     # Route: /weather
     @app.route("/weather", methods=["GET"])
     def weather():
-        city_raw = request.args.get("city") or ""
-        city_key = city_raw.upper().strip()
+        lat_raw = request.args.get("lat") or ""
+        lon_raw = request.args.get("lon") or ""
+        city_name = request.args.get("city_name") or ""
         horizon_raw = request.args.get("horizon")
 
         has_results = False
@@ -83,22 +84,18 @@ def create_app() -> Flask:
             "active_tab": "weather",
             "has_results": has_results,
             "error_msg": error_msg,
-            "city": city_key or "LONDON",
+            "lat": lat_raw,
+            "lon": lon_raw,
+            "city_name": city_name,
             "horizon": horizon_raw or "30",
         }
 
-        # List of preset cities for easy GDS select box mapping
-        context["cities"] = [
-            {"id": "LONDON", "name": "London, United Kingdom"},
-            {"id": "NEW_YORK", "name": "New York, United States"},
-            {"id": "TOKYO", "name": "Tokyo, Japan"},
-            {"id": "SYDNEY", "name": "Sydney, Australia"}
-        ]
-
-        if city_raw:
+        if lat_raw and lon_raw:
             try:
+                lat = float(lat_raw)
+                lon = float(lon_raw)
                 horizon = _parse_horizon(horizon_raw)
-                forecast_data = _build_weather_forecast(city_key, horizon)
+                forecast_data = _build_weather_forecast(lat, lon, city_name, horizon)
                 context.update(forecast_data)
                 context["has_results"] = True
             except Exception as e:
@@ -168,6 +165,43 @@ def create_app() -> Flask:
         except Exception:
             return jsonify([])
 
+    # Auto-complete API route for Weather tab (search location)
+    @app.route("/api/weather/search", methods=["GET"])
+    def api_weather_search():
+        query = request.args.get("q", "").strip()
+        if len(query) < 2:
+            return jsonify([])
+
+        url = f"https://geocoding-api.open-meteo.com/v1/search?name={query}&count=10&language=en&format=json"
+        try:
+            r = requests.get(url, timeout=5)
+            r.raise_for_status()
+            data = r.json()
+            results = data.get("results", [])
+            out = []
+            for item in results:
+                name = item.get("name")
+                admin1 = item.get("admin1")
+                country = item.get("country")
+                lat = item.get("latitude")
+                lon = item.get("longitude")
+                
+                # Format location label
+                location_label = f"{name}"
+                if admin1:
+                    location_label += f", {admin1}"
+                if country:
+                    location_label += f", {country}"
+                    
+                out.append({
+                    "label": location_label,
+                    "lat": lat,
+                    "lon": lon
+                })
+            return jsonify(out)
+        except Exception:
+            return jsonify([])
+
     return app
 
 
@@ -229,18 +263,9 @@ def _build_finance_forecast(ticker: str, horizon: int) -> dict:
     }
 
 
-def _build_weather_forecast(city_key: str, horizon: int) -> dict:
-    city_map = {
-        "LONDON": {"name": "London, United Kingdom", "lat": 51.5074, "lon": -0.1278},
-        "NEW_YORK": {"name": "New York, United States", "lat": 40.7128, "lon": -74.0060},
-        "TOKYO": {"name": "Tokyo, Japan", "lat": 35.6762, "lon": 139.6503},
-        "SYDNEY": {"name": "Sydney, Australia", "lat": -33.8688, "lon": 151.2093}
-    }
+def _build_weather_forecast(lat: float, lon: float, city_name: str, horizon: int) -> dict:
+    cache_key = f"WEATHER_{lat:.4f}_{lon:.4f}".replace("-", "MINUS")
     
-    city_info = city_map.get(city_key, city_map["LONDON"])
-    lat, lon = city_info["lat"], city_info["lon"]
-    city_name = city_info["name"]
-
     # Fetch weather coordinates
     hist = fetch_weather_data(lat, lon)
     if hist.empty:
@@ -249,10 +274,10 @@ def _build_weather_forecast(city_key: str, horizon: int) -> dict:
     current_price = float(hist["y"].iloc[-1])
 
     # Run generic model
-    forecast_df = get_generic_forecast(city_key, horizon, lambda: fetch_weather_data(lat, lon))
+    forecast_df = get_generic_forecast(cache_key, horizon, lambda: fetch_weather_data(lat, lon))
     
     # Load model diagnostics
-    model_data = load_model(city_key)
+    model_data = load_model(cache_key)
     diagnostics = model_data.get("diagnostics", {})
 
     final_predicted = float(forecast_df["hybrid_val"].iloc[-1])
@@ -276,7 +301,7 @@ def _build_weather_forecast(city_key: str, horizon: int) -> dict:
     company_info = {
         "name": f"Daily Weather Profile: {city_name}",
         "sector": "Meteorology & Climate",
-        "industry": "Surface Temperature (2m Max)",
+        "industry": f"Coordinates: {lat:.4f}°N, {lon:.4f}°E",
         "employees": "N/A",
         "summary": f"Maximum daily surface temperature predictions for {city_name} modeled dynamically using high-resolution Open-Meteo climate datasets. Standard Bayesian trend and short-term residuals are calculated below.",
         "market_cap": "N/A",
@@ -293,11 +318,14 @@ def _build_weather_forecast(city_key: str, horizon: int) -> dict:
         "forecast_rows": rows,
         "chart_html": chart_html,
         "horizon": horizon,
-        "ticker": city_key,
+        "ticker": cache_key,
         "company_info": company_info,
         "diagnostics": diagnostics,
         "unit_prefix": "",
-        "unit_suffix": "°C"
+        "unit_suffix": "°C",
+        "lat": lat,
+        "lon": lon,
+        "city_name": city_name
     }
 
 
