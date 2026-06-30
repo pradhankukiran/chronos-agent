@@ -64,10 +64,51 @@
         background-color: #1d70b8 !important;
         color: #ffffff !important;
       }
+
+      /* Loading Overlay Styles */
+      #loading-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(255, 255, 255, 0.96);
+        z-index: 99999;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+      }
+      .loading-container {
+        max-width: 600px;
+        padding: 30px;
+      }
+      .gds-spinner {
+        display: inline-block;
+        width: 60px;
+        height: 60px;
+        border: 6px solid #b1b4b6;
+        border-radius: 50%;
+        border-top-color: #1d70b8;
+        animation: spin 1s linear infinite;
+        margin-bottom: 25px;
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
     </style>
   </head>
   <body class="govuk-template__body govuk-js-supported">
     <a href="#main-content" class="govuk-skip-link" data-module="govuk-skip-link">Skip to main content</a>
+
+    <div id="loading-overlay" aria-hidden="true" role="dialog" aria-labelledby="loading-title">
+      <div class="loading-container">
+        <div class="gds-spinner"></div>
+        <h2 class="govuk-heading-l" id="loading-title" style="margin-bottom: 10px;">Calculating forecast...</h2>
+        <p class="govuk-body" id="loading-status" style="color: #505a5f; font-size: 19px; font-weight: bold; min-height: 30px;"></p>
+      </div>
+    </div>
 
     {% block cookie_banner %}
       {% if not request.cookies.get('cookies_policy') %}
@@ -124,5 +165,53 @@
 
     <script src="https://unpkg.com/accessible-autocomplete@3.0.1/dist/accessible-autocomplete.min.js"></script>
     <script src="{{ url_for('static', filename='govuk/all.bundle.min.js') }}"></script>
+    
+    <script>
+      // Global Form Submission Loader Event Listener with Buzzwords Cycling
+      document.addEventListener("DOMContentLoaded", function() {
+        var form = document.getElementById('forecast-form');
+        if (form) {
+          form.addEventListener('submit', function(e) {
+            // Show loading overlay
+            var overlay = document.getElementById('loading-overlay');
+            if (overlay) {
+              overlay.style.display = 'flex';
+              overlay.setAttribute('aria-hidden', 'false');
+            }
+            
+            var buzzwords = [
+              "Initializing forecasting engines...",
+              "Connecting to database nodes and downloading data...",
+              "Running data structure validations and cleaning nulls...",
+              "Fitting Bayesian Prophet time-series regressions...",
+              "Extracting trend changepoints and seasonal parameters...",
+              "Calculating weekly seasonality cycles and peaks...",
+              "Calculating yearly seasonality cycles and peaks...",
+              "Engineering rolling moving averages and technical indicators...",
+              "Training XGBoost regressor models on residuals...",
+              "Running autoregressive loops to forecast future steps...",
+              "Ensembling Prophet baseline and XGBoost corrections...",
+              "Evaluating validation splits for accuracy metrics...",
+              "Calibrating Durbin-Watson autocorrelation indices...",
+              "Constructing custom HTML interactive Plotly traces...",
+              "Preparing GDS-compliant layout reports..."
+            ];
+            
+            var statusEl = document.getElementById('loading-status');
+            var index = 0;
+            
+            function cycle() {
+              if (statusEl) {
+                statusEl.textContent = buzzwords[index];
+                index = (index + 1) % buzzwords.length;
+              }
+            }
+            
+            cycle();
+            setInterval(cycle, 800);
+          });
+        }
+      });
+    </script>
   </body>
 </html>
