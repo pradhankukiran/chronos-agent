@@ -1,0 +1,12 @@
+# Ignore python environment
+venv/
+
+# Ignore local compiled model cache
+models/
+
+# Ignore compiled python bytecode
+__pycache__/
+*.pyc
+
+# Ignore OS files
+.DS_Store
