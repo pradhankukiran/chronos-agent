@@ -1,5 +1,15 @@
 {% extends "base.html" %}
 
+{% block title %}
+  {% if active_tab == 'finance' %}
+    Forecast Stock and Asset Prices
+  {% elif active_tab == 'weather' %}
+    Forecast Regional Weather Temperatures
+  {% else %}
+    Forecast Macroeconomic Indicators
+  {% endif %}
+{% endblock %}
+
 {% block content %}
   <span class="govuk-caption-xl">
     {% if active_tab == 'finance' %}Financial forecasting
