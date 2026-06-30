@@ -31,11 +31,31 @@
   <details class="govuk-details" data-module="govuk-details" style="margin-bottom: 30px;">
     <summary class="govuk-details__summary">
       <span class="govuk-details__summary-text">
-        About {{ company_info.name }}
+        {% if active_tab == 'finance' %}
+          About {{ company_info.name }}
+        {% elif active_tab == 'weather' %}
+          About Daily Weather Profile: {{ city_name }}
+        {% else %}
+          About Economic Indicator: {{ company_info.name.replace('Economic Indicator Profile: ', '') }}
+        {% endif %}
       </span>
     </summary>
     <div class="govuk-details__text">
-      <p class="govuk-body"><strong>Sector:</strong> {{ company_info.sector }} &nbsp;|&nbsp; <strong>Industry:</strong> {{ company_info.industry }} &nbsp;|&nbsp; <strong>Employees:</strong> {{ company_info.employees }}</p>
+      <p class="govuk-body">
+        {% if active_tab == 'finance' %}
+          <strong>Sector:</strong> {{ company_info.sector }} &nbsp;|&nbsp; 
+          <strong>Industry:</strong> {{ company_info.industry }} &nbsp;|&nbsp; 
+          <strong>Employees:</strong> {{ company_info.employees }}
+        {% elif active_tab == 'weather' %}
+          <strong>Coordinates:</strong> {{ "%.4f"|format(lat|float) }}°N, {{ "%.4f"|format(lon|float) }}°E &nbsp;|&nbsp; 
+          <strong>Source:</strong> Open-Meteo Archive &nbsp;|&nbsp; 
+          <strong>Resolution:</strong> Daily Max Temperature
+        {% else %}
+          <strong>Source:</strong> Federal Reserve Bank (FRED) &nbsp;|&nbsp; 
+          <strong>Series ID:</strong> <code>{{ ticker }}</code> &nbsp;|&nbsp; 
+          <strong>Frequency:</strong> Monthly
+        {% endif %}
+      </p>
       <p class="govuk-body">{{ company_info.summary }}</p>
     </div>
   </details>
